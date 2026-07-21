@@ -1,0 +1,61 @@
+# Default configuration for webcam_tracker (Stage 1).
+#
+# This file holds every non-secret tunable the spec requires to be
+# configurable. Nothing machine-specific (like an absolute file path only
+# valid on one developer's laptop) belongs here — use paths relative to the
+# project root, or override via environment variables / a local .env file
+# (see .env.example) for anything machine-specific or secret.
+#
+# Any value here can be overridden without editing this file by setting an
+# environment variable named WEBCAM_TRACKER_<SECTION>__<FIELD> (double
+# underscore between section and field), e.g. WEBCAM_TRACKER_VIDEO__SOURCE=1
+# to select webcam index 1 instead of 0.
+
+video:
+  # "auto" probes for the first working webcam and uses it -- this is what
+  # makes the same config work unmodified on a desktop with a USB webcam and
+  # a laptop with a built-in webcam, since it doesn't assume a fixed device
+  # index (that assignment is OS/driver-dependent and differs per machine).
+  #
+  # If a machine has more than one camera and auto-detection picks the wrong
+  # one, run `.venv\Scripts\python.exe scripts\list_cameras.py` to see every
+  # working index, then pin one explicitly here or via
+  # WEBCAM_TRACKER_VIDEO__SOURCE in a local .env (gitignored, so each
+  # machine can override independently without touching this shared file):
+  #   source: "0"                              # explicit webcam index
+  #   source: "data/test_videos/sample1.mp4"   # a single video file
+  #   source: "data/test_videos"               # every video file in a folder, back to back
+  source: "auto"
+  requested_width: 1280
+  requested_height: 720
+  requested_fps: 30
+
+logging:
+  level: "INFO"   # DEBUG | INFO | WARNING | ERROR
+  log_dir: "logs"
+  json_format: true
+
+paths:
+  models_dir: "models"
+  data_dir: "data"
+
+detection:
+  # Resolved against paths.models_dir if relative. Auto-downloaded by
+  # Ultralytics on first use if the file doesn't exist yet -- see
+  # docs/model_licenses.md for exactly which weights this is and their license.
+  model_path: "yolo11n.pt"
+  # Minimum confidence to keep a detection. Lower = more detections (more
+  # false positives); higher = fewer detections (more missed people).
+  confidence_threshold: 0.5
+  # YOLO resizes the frame to image_size x image_size before inference.
+  # 640 is the standard YOLO default (accuracy/speed balance); smaller
+  # (e.g. 320) is faster but less accurate -- relevant later for embedded FPS.
+  image_size: 640
+  # "auto" uses the GPU if available (verified: RTX 3060 on the primary dev
+  # machine), otherwise falls back to CPU. Override to "cpu" to force
+  # CPU-only for comparison/testing.
+  device: "auto"
+
+# Sections for tracking, gimbal PID gains, etc. are added as each module is
+# implemented, not stubbed out empty here ahead of time — an unused config
+# field is a bug waiting to hide a typo.

@@ -1,0 +1,25 @@
+# Core runtime dependencies for webcam_tracker (video I/O, config, logging).
+# Detection/tracking/ML dependencies (ultralytics, torch, etc.) live in
+# requirements-ml.txt instead -- they're a much heavier, GPU-specific
+# install, kept separate so the lightweight core can be installed/tested
+# without pulling in gigabytes of ML packages.
+#
+# Regenerate with:
+#   .venv\Scripts\python.exe -m pip freeze
+# after installing a new package with .venv\Scripts\python.exe -m pip install <pkg>,
+# then move the new top-level package (and any new transitive deps it pulls
+# in) into this file by hand — keeps this file readable instead of an opaque
+# full freeze dump.
+
+numpy==2.4.4
+opencv-python==5.0.0.93
+pydantic==2.13.4
+pydantic-settings==2.14.2
+PyYAML==6.0.3
+python-dotenv==1.2.2
+
+# --- transitive (pydantic) ---
+annotated-types==0.7.0
+pydantic_core==2.46.4
+typing-inspection==0.4.2
+typing_extensions==4.16.0

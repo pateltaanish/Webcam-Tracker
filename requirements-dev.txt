@@ -1,0 +1,20 @@
+# Development-only dependencies: testing, linting, formatting, type checking.
+# Install with:
+#   .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.15.22
+mypy==2.3.0
+
+# --- transitive ---
+coverage==7.15.2
+iniconfig==2.3.0
+packaging==26.2
+pluggy==1.6.0
+Pygments==2.20.0
+colorama==0.4.6
+pathspec==1.1.1
+mypy_extensions==1.1.0
+ast_serialize==0.6.0
+librt==0.13.0

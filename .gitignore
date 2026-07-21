@@ -1,0 +1,41 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Secrets / machine-specific config
+.env
+*.local.yaml
+
+# Model weights (large, versioned separately — see docs/model_licenses.md)
+models/*.pt
+models/*.onnx
+models/*.engine
+models/*.trt
+models/*.blob
+
+# Captured test data / registration data (may contain biometric data — never commit)
+data/test_videos/*
+!data/test_videos/.gitkeep
+data/registrations/
+data/debug_output/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/

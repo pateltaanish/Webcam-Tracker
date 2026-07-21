@@ -1,0 +1,51 @@
+# ML/detection dependencies for webcam_tracker (Stage 1.3+).
+#
+# torch/torchvision need a CUDA-matched build, not the default PyPI (CPU-only
+# on Windows) build. This file pulls them from PyTorch's own CUDA 12.6 wheel
+# index via --extra-index-url below -- verified against the RTX 3060 on the
+# primary dev machine (torch.cuda.is_available() == True). If you're on a
+# different GPU/driver, check https://pytorch.org/get-started/locally/ for
+# the CUDA tag that matches your driver, and adjust the index URL and the
+# torch/torchvision version suffixes (+cu126) below to match.
+#
+# Install with:
+#   .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-ml.txt
+#
+# CPU-only machines: drop the --extra-index-url line and the "+cu126"
+# suffixes below; pip will install the default CPU build instead. Detection
+# will still work, just much slower.
+
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+torch==2.13.0+cu126
+torchvision==0.28.0+cu126
+ultralytics==8.4.102
+
+# --- transitive ---
+certifi==2026.6.17
+charset-normalizer==3.4.9
+contourpy==1.3.3
+cycler==0.12.1
+filelock==3.29.0
+fonttools==4.63.0
+fsspec==2026.4.0
+idna==3.18
+Jinja2==3.1.6
+kiwisolver==1.5.0
+MarkupSafe==3.0.3
+matplotlib==3.11.1
+mpmath==1.3.0
+networkx==3.6.1
+nvidia-ml-py==13.610.43
+pillow==12.2.0
+polars==1.42.1
+polars-runtime-32==1.42.1
+psutil==7.2.2
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+requests==2.34.2
+setuptools==78.1.0
+six==1.17.0
+sympy==1.14.0
+ultralytics-thop==2.0.20
+urllib3==2.7.0
