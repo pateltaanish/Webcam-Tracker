@@ -56,6 +56,46 @@ detection:
   # CPU-only for comparison/testing.
   device: "auto"
 
-# Sections for tracking, gimbal PID gains, etc. are added as each module is
+tracking:
+  # How many frames a track survives with no matching detection before it's
+  # dropped (not reported at all, rather than reported with a stale box).
+  # 30 frames ~= 1 second at 30fps. Short gaps (a person briefly turning,
+  # a missed detection) recover with the SAME track id; longer gaps don't --
+  # that's a job for the recovery module (Stage 1.8), not the tracker itself.
+  lost_track_buffer: 30
+  # Minimum detection confidence to START a brand-new track. Existing tracks
+  # can still match to lower-confidence detections (see high_conf_det_threshold)
+  # -- this only gates *new* tracks, to avoid spurious one-off detections
+  # spawning noise tracks.
+  track_activation_threshold: 0.7
+  # A new track must match for this many consecutive frames before it's
+  # assigned a real ID -- until then it's reported internally as id -1 and
+  # PersonTracker filters it out of what it returns. This is what prevents a
+  # single flickering false-positive detection from becoming a "tracked person".
+  # Note: a track is NEVER confirmed on the very frame it first appears, even
+  # with this set to 1 -- confirmation needs at least one more matching frame
+  # after that, so 1 and 2 behave identically here; this only starts making a
+  # difference at 3+.
+  minimum_consecutive_frames: 2
+  # Minimum box overlap (IoU, 0-1) required to match a detection to an
+  # existing track. Lower = more forgiving of fast motion/low frame rate,
+  # but risks matching the wrong nearby person.
+  minimum_iou_threshold: 0.1
+  # ByteTrack's core idea ("BYTE"): detections above this confidence are
+  # matched first/preferentially; detections below it (but still above
+  # detection.confidence_threshold) are used as weaker, second-pass evidence
+  # -- this is what helps keep a track alive through partial occlusion
+  # instead of only trusting high-confidence boxes.
+  high_conf_det_threshold: 0.6
+
+perf_monitor:
+  # How often (seconds) the rolling FPS figure is recomputed. Shorter =
+  # more responsive to sudden slowdowns, but noisier frame-to-frame.
+  fps_window_seconds: 0.5
+  # Minimum time (seconds) between structured perf-snapshot log lines --
+  # keeps continuous per-frame monitoring from spamming the log file.
+  log_interval_seconds: 5.0
+
+# Sections for gimbal PID gains, etc. are added as each module is
 # implemented, not stubbed out empty here ahead of time — an unused config
 # field is a bug waiting to hide a typo.

@@ -36,10 +36,11 @@ Run these from a terminal in the repo root (`e:\Webcam-Tracker`).
    .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt -r requirements-ml.txt
    .venv\Scripts\python.exe -m pip install -e . --no-deps
    ```
-   `requirements-ml.txt` installs torch/torchvision/ultralytics for person
-   detection -- it's a much heavier download (~2-3 GB) and pulls torch from
-   PyTorch's own CUDA wheel index rather than plain PyPI (see the comments
-   at the top of that file for why, and what to do on a CPU-only machine).
+   `requirements-ml.txt` installs torch/torchvision/ultralytics (detection)
+   and trackers/supervision (tracking) -- it's a much heavier download
+   (~2-3 GB) and pulls torch from PyTorch's own CUDA wheel index rather than
+   plain PyPI (see the comments at the top of that file for why, and what to
+   do on a CPU-only machine).
    What it does: installs pinned runtime + dev dependencies, then installs
    this project itself in "editable" mode (`-e .`) so `import webcam_tracker`
    works from anywhere without reinstalling after every code change.
@@ -142,12 +143,62 @@ filtered to the "person" class only. Weights auto-download to
   This is detection only, not tracking -- no persistent ID across frames yet
   (that's Stage 1.4).
 
+## Person tracking (Stage 1.4)
+
+`src/webcam_tracker/tracking` wraps ByteTrack (via the `trackers` package)
+to assign a persistent `track_id` to each detected person across frames --
+so the pipeline can say "this is the same person as last frame," not just
+"there's a person here." A new person takes a couple of frames to first
+appear (tracks aren't reported until confirmed by
+`tracking.minimum_consecutive_frames` consecutive matches, filtering out
+one-frame flicker). Verification scripts:
+
+- `scripts\smoke_test_tracking.py` -- headless: runs detection + tracking on
+  ~3 seconds of real frames and reports how stable the track ID(s) stayed.
+- `scripts\preview_tracking.py` -- live GUI window, box color keyed by
+  `track_id` (same person = same color across frames, unlike detection's
+  position-based coloring). Try it with two people crossing paths to see
+  where motion-only tracking can still swap IDs -- that's a real limitation,
+  not a bug, and part of what Stage 2's Re-ID work will reduce.
+
+## Visualization & performance monitoring (Stage 1.5)
+
+`src/webcam_tracker/perf_monitor` (`PerfMonitor`) tracks rolling FPS and
+per-stage latency (e.g. how long detection vs. tracking took within a
+frame), and rate-limits structured perf-snapshot log lines so continuous
+monitoring doesn't spam the log file. `src/webcam_tracker/visualization`
+(`draw_detections`, `draw_tracked_people`, `draw_perf_overlay`) draws boxes/
+IDs/FPS onto a frame. All three preview scripts (`preview_webcam.py`,
+`preview_detection.py`, `preview_tracking.py`) now share these instead of
+each duplicating their own FPS-counter and box-drawing code.
+
+## Manual target selection (Stage 1.6)
+
+`src/webcam_tracker/target_selection` (`TargetSelector`) lets you pick which
+tracked person is "the target" and reports, every frame, whether they're
+still visible and their pixel/normalized error relative to frame center --
+the raw signal Stage 1.7's simulated gimbal controller will consume. This is
+manual selection only (click a person); Stage 2+ swaps in DB-driven identity
+selection behind the same interface, so nothing downstream has to change.
+
+- `scripts\preview_target_selection.py` -- live GUI window. **Left-click** a
+  tracked person to select them as the target (right-click or press 'c' to
+  clear). The target gets a fixed-color highlight box, a crosshair at both
+  frame-center and target-center connected by a line, and a pixel-error /
+  normalized-error readout. If the target's track is lost, you'll see a red
+  "TARGET LOST" warning instead of a stale box.
+- `scripts\smoke_test_target_selection.py` -- headless: auto-"clicks" the
+  first confirmed track and reports its status/error over a few seconds, to
+  verify the whole chain without needing to click anything.
+
 ## Status
 
-Stage 1.1 (repo scaffold), 1.2 (video input), and 1.3 (person detection)
-complete. Detection verified via real inference against Ultralytics' bundled
-sample images (integration tests) and against a live frame from the desktop
-USB webcam, on GPU (RTX 3060, CUDA confirmed available). Not yet verified
-against a laptop's built-in webcam -- run `scripts\list_cameras.py` there
-first. No tracking/identity code has been implemented yet -- see
+Stage 1.1 (repo scaffold) through 1.6 (manual target selection) complete.
+Verified against real webcam frames on the desktop USB webcam (GPU: RTX
+3060, CUDA confirmed available) -- a single person's track ID stayed stable
+across 99% of a 90-frame observation window, zero switches; target selection
+kept the target visible with zero "TARGET LOST" events across 29 frames
+while pixel error tracked real movement smoothly. Not yet verified against a
+laptop's built-in webcam -- run `scripts\list_cameras.py` there first. No
+identity/recognition code has been implemented yet -- see
 `docs/04_roadmap.md` for what's next.

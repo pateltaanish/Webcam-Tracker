@@ -3,14 +3,23 @@
 Opens the configured video source and runs the real person detector on every
 frame, drawing a box + confidence around each detected person, live, in a
 window. This is detection only -- no persistent track IDs yet (that's
-tracking, Stage 1.4, not built). Every frame is detected independently, so a
-box may flicker or its position may not obviously connect frame-to-frame.
+tracking, Stage 1.4). Every frame is detected independently, so a box may
+flicker or its position may not obviously connect frame-to-frame.
+
+Each detected person gets a different box color (see
+webcam_tracker.visualization.assign_colors), assigned by left-to-right
+screen position -- NOT a stable per-person identity, since that requires
+tracking. Watch what happens to the colors when two people cross paths:
+they'll swap, because position is all this coloring has to go on. That's the
+exact problem persistent tracking exists to solve -- see
+scripts\\preview_tracking.py for the tracked version, which colors by a
+genuinely stable per-person track ID instead.
 
 Run from the repo root:
     .venv\\Scripts\\python.exe scripts\\preview_detection.py
 
 Expected output: a window titled "webcam_tracker detection preview" showing
-your live camera feed with a green box + confidence score around each
+your live camera feed with a colored box + confidence score around each
 detected person, plus an FPS counter. Press 'q' or Esc to close.
 
 Common errors: same as scripts\\preview_webcam.py (see that file's
@@ -21,14 +30,14 @@ log line at startup for which device it picked.
 
 from __future__ import annotations
 
-import time
-
 import cv2
 
 from webcam_tracker.config import load_config
 from webcam_tracker.detection import create_detector
 from webcam_tracker.logging_utils import configure_logging, get_logger
+from webcam_tracker.perf_monitor import PerfMonitor
 from webcam_tracker.video_input import VideoSourceError, create_source
+from webcam_tracker.visualization import draw_detections, draw_perf_overlay
 
 WINDOW_NAME = "webcam_tracker detection preview"
 
@@ -42,49 +51,20 @@ def main() -> None:
     detector.load()
 
     source = create_source(config)
-
-    fps_window_start = time.monotonic()
-    frames_in_window = 0
-    display_fps = 0.0
+    perf = PerfMonitor(fps_window_seconds=config.perf_monitor.fps_window_seconds)
 
     try:
         with source:  # __enter__ calls source.open() -- do not call open() separately
             for frame in source:
-                detections = detector.detect(frame.image)
-
-                frames_in_window += 1
-                elapsed = time.monotonic() - fps_window_start
-                if elapsed >= 0.5:
-                    display_fps = frames_in_window / elapsed
-                    frames_in_window = 0
-                    fps_window_start = time.monotonic()
+                perf.start_frame()
+                with perf.measure("detection"):
+                    detections = detector.detect(frame.image)
+                perf.end_frame()
+                perf.log_if_due(config.perf_monitor.log_interval_seconds)
 
                 image = frame.image.copy()
-                for detection in detections:
-                    x1, y1, x2, y2 = (
-                        int(v) for v in (detection.x1, detection.y1, detection.x2, detection.y2)
-                    )
-                    cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    label = f"person {detection.confidence:.2f}"
-                    cv2.putText(
-                        image,
-                        label,
-                        (x1, max(0, y1 - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6,
-                        (0, 255, 0),
-                        2,
-                    )
-
-                cv2.putText(
-                    image,
-                    f"FPS: {display_fps:.1f}  people: {len(detections)}",
-                    (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 255, 0),
-                    2,
-                )
+                draw_detections(image, detections)
+                draw_perf_overlay(image, perf.snapshot(), extra_text=f"people: {len(detections)}")
                 cv2.imshow(WINDOW_NAME, image)
 
                 key = cv2.waitKey(1) & 0xFF

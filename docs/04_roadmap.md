@@ -37,12 +37,51 @@ scaffolding around it is solid.
      `scripts\smoke_test_detection.py` (headless, saves an annotated frame
      to disk) and `scripts\preview_detection.py` (live GUI window with
      boxes + FPS, detection only -- no persistent IDs until 1.4 tracking).
-1.4. `tracking`: ByteTrack wrapper assigning persistent IDs. Verify: IDs stay
-     stable across a video of one person walking around; log ID-switch events.
-1.5. `visualization` + `perf_monitor`: on-screen boxes/IDs/FPS/latency overlay.
-1.6. `target_selection` (manual, Stage 1 stub): click/key-select a track ID
-     as "the target" — no identity verification yet, just to exercise the
-     downstream pipeline end to end.
+1.4. **DONE.** `tracking`: ByteTrack wrapper (`PersonTracker`, via the
+     `trackers` package -- `supervision.ByteTrack` is deprecated, see
+     docs/model_licenses.md) assigning persistent track IDs to detections.
+     A new track is withheld until `tracking.minimum_consecutive_frames`
+     consecutive matches confirm it (filters out one-frame flicker false
+     positives becoming "tracked people"); "track started" events are
+     logged. True identity-switch *detection/measurement* (was this new ID
+     actually the same physical person?) is deferred to the Stage 1.10 test
+     harness with labeled ground-truth video, not attempted inside the live
+     tracker itself. Verified against real webcam frames
+     (`scripts\smoke_test_tracking.py`): a single person's track ID stayed
+     stable across 89/90 observed frames (99%), zero switches. Live GUI
+     verification: `scripts\preview_tracking.py` colors each box by
+     track_id (stable per-person color, unlike detection-stage's
+     position-based coloring) -- try it with two people crossing paths to
+     see where ByteTrack's motion-only matching can still swap IDs (that's
+     the known limitation Re-ID in Stage 2 exists to reduce).
+1.5. **DONE.** `visualization` + `perf_monitor`: on-screen boxes/IDs/FPS/latency
+     overlay, formalized out of the ad-hoc drawing/FPS code that had been
+     duplicated across all three preview scripts since Stage 1.2. `PerfMonitor`
+     tracks rolling FPS and per-stage latency (`measure("detection")`,
+     `measure("tracking")`, ...) with an injectable clock for deterministic
+     unit tests, plus rate-limited structured logging
+     (`perf_monitor.log_interval_seconds`) so continuous per-frame monitoring
+     doesn't spam the log file. `draw_detections`/`draw_tracked_people`/
+     `draw_perf_overlay` replace the inline `cv2.rectangle`/`cv2.putText`
+     calls that used to be copy-pasted in each script. All three preview
+     scripts refactored onto the new modules; re-verified end-to-end against
+     the real webcam (`scripts\smoke_test_detection.py`).
+1.6. **DONE.** `target_selection` (manual, Stage 1 stub): `TargetSelector`
+     holds a selected track_id and reports per-frame `TargetStatus`
+     (visible/not, target center, pixel error vs. frame center, normalized
+     error) -- no identity verification yet, this is purely
+     "which track_id is the target and where is it relative to center,"
+     exercising the downstream pipeline end to end ahead of Stage 1.7's
+     gimbal math. `select_at_point()` maps a click to whichever tracked
+     box contains it (smallest box wins on overlap). Live verification:
+     `scripts\preview_target_selection.py` (left-click to select,
+     right-click or 'c' to clear, highlighted box + crosshair + error
+     readout). Verified end-to-end against real webcam frames
+     (`scripts\smoke_test_target_selection.py`, auto-clicking the first
+     confirmed track): target stayed visible with zero "TARGET LOST" events
+     across 29 frames while pixel error tracked real left/right movement
+     smoothly (-193px to +28px), normalized error staying in the expected
+     -1..1 range.
 1.7. `gimbal_control` (simulated): pixel error → normalized error → simulated
      pan/tilt velocity, deadband, clamping. Output logged/displayed, no real
      motors. Unit tests for the math independent of any camera.

@@ -63,6 +63,41 @@ class DetectionConfig(BaseModel):
     device: str = Field(description="'auto', 'cpu', 'cuda', or 'cuda:<index>'.")
 
 
+class TrackingConfig(BaseModel):
+    """Multi-object tracker (ByteTrack) settings. Consumed by the tracking module."""
+
+    lost_track_buffer: int = Field(
+        gt=0, description="Frames to keep a lost track alive for re-matching before dropping it."
+    )
+    track_activation_threshold: float = Field(
+        gt=0.0, le=1.0, description="Min detection confidence to start a brand-new track."
+    )
+    minimum_consecutive_frames: int = Field(
+        gt=0, description="Frames a new track must match before it's assigned a real (non -1) ID."
+    )
+    minimum_iou_threshold: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Min box overlap (IoU) to match a detection to an existing track.",
+    )
+    high_conf_det_threshold: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Confidence above which a detection is matched first (BYTE's 2-tier match).",
+    )
+
+
+class PerfMonitorConfig(BaseModel):
+    """Performance monitoring settings. Consumed by the perf_monitor module."""
+
+    fps_window_seconds: float = Field(
+        gt=0.0, description="How often the rolling FPS figure is recomputed."
+    )
+    log_interval_seconds: float = Field(
+        gt=0.0, description="Minimum time between structured perf-snapshot log lines."
+    )
+
+
 class AppConfig(BaseSettings):
     """Root application config, assembled from YAML defaults + env overrides."""
 
@@ -77,6 +112,8 @@ class AppConfig(BaseSettings):
     logging: LoggingConfig
     paths: PathsConfig
     detection: DetectionConfig
+    tracking: TrackingConfig
+    perf_monitor: PerfMonitorConfig
 
     @classmethod
     def settings_customise_sources(

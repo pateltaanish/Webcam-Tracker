@@ -26,13 +26,13 @@ Common errors:
 
 from __future__ import annotations
 
-import time
-
 import cv2
 
 from webcam_tracker.config import load_config
 from webcam_tracker.logging_utils import configure_logging, get_logger
+from webcam_tracker.perf_monitor import PerfMonitor
 from webcam_tracker.video_input import VideoSourceError, create_source
+from webcam_tracker.visualization import draw_perf_overlay
 
 WINDOW_NAME = "webcam_tracker preview"
 
@@ -43,31 +43,17 @@ def main() -> None:
     logger = get_logger(__name__)
 
     source = create_source(config)
-
-    fps_window_start = time.monotonic()
-    frames_in_window = 0
-    display_fps = 0.0
+    perf = PerfMonitor(fps_window_seconds=config.perf_monitor.fps_window_seconds)
 
     try:
         with source:  # __enter__ calls source.open() -- do not call open() separately
             for frame in source:
-                frames_in_window += 1
-                elapsed = time.monotonic() - fps_window_start
-                if elapsed >= 0.5:
-                    display_fps = frames_in_window / elapsed
-                    frames_in_window = 0
-                    fps_window_start = time.monotonic()
+                perf.start_frame()
+                perf.end_frame()
+                perf.log_if_due(config.perf_monitor.log_interval_seconds)
 
                 image = frame.image.copy()
-                cv2.putText(
-                    image,
-                    f"FPS: {display_fps:.1f}  frame: {frame.frame_index}",
-                    (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 255, 0),
-                    2,
-                )
+                draw_perf_overlay(image, perf.snapshot())
                 cv2.imshow(WINDOW_NAME, image)
 
                 key = cv2.waitKey(1) & 0xFF

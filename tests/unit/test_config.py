@@ -17,6 +17,13 @@ def test_load_config_reads_yaml_defaults() -> None:
     assert config.detection.confidence_threshold == 0.5
     assert config.detection.image_size == 640
     assert config.detection.device == "auto"
+    assert config.tracking.lost_track_buffer == 30
+    assert config.tracking.track_activation_threshold == 0.7
+    assert config.tracking.minimum_consecutive_frames == 2
+    assert config.tracking.minimum_iou_threshold == 0.1
+    assert config.tracking.high_conf_det_threshold == 0.6
+    assert config.perf_monitor.fps_window_seconds == 0.5
+    assert config.perf_monitor.log_interval_seconds == 5.0
 
 
 def test_load_config_is_cached() -> None:

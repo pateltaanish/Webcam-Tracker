@@ -133,6 +133,14 @@ reliable frame-to-frame continuity; our `identity` module is the layer
 responsible for "is this specific track still plausibly the registered
 target," independent of the tracker's internal matching.
 
+**Implementation note (Stage 1.4):** `supervision`'s built-in `sv.ByteTrack`
+is deprecated as of supervision 0.28 (removed in 0.30) in favor of
+`ByteTrackTracker` from a dedicated `trackers` package (Apache-2.0, not
+MIT as originally estimated above before we'd pinned an actual library —
+`supervision` itself, MIT, is still a dependency for its `Detections` data
+structure). Functionally the same ByteTrack algorithm either way. See
+docs/model_licenses.md for both packages' exact license info.
+
 ### 3.3 Face detection + embedding
 
 | Criterion | SCRFD + ArcFace (InsightFace) | RetinaFace + ArcFace | MTCNN + FaceNet |
