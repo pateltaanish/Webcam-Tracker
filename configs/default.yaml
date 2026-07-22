@@ -96,6 +96,82 @@ perf_monitor:
   # keeps continuous per-frame monitoring from spamming the log file.
   log_interval_seconds: 5.0
 
-# Sections for gimbal PID gains, etc. are added as each module is
-# implemented, not stubbed out empty here ahead of time — an unused config
-# field is a bug waiting to hide a typo.
+gimbal:
+  # PID gains below are UNTUNED PLACEHOLDERS -- there's no physical gimbal
+  # yet to tune against (see docs/01_risks_and_assumptions.md). Error input
+  # is normalized frame error (-1..1, from target_selection), not degrees --
+  # we don't have a calibrated camera field-of-view yet, so gains are tuned
+  # to produce plausible-looking simulated deg/s output directly from that
+  # normalized error, not a physically-derived angle.
+  pan:
+    kp: 80.0
+    ki: 5.0
+    kd: 8.0
+    # Typical pan gimbals rotate roughly this far either side of center.
+    angle_limit_deg: 170.0
+  tilt:
+    kp: 80.0
+    ki: 5.0
+    kd: 8.0
+    # Tilt range is usually much smaller than pan (can't point straight
+    # backward/through the mount).
+    angle_limit_deg: 60.0
+  # Normalized error below this is treated as zero -- avoids jittery
+  # micro-corrections from detection/tracking noise when already centered.
+  deadband: 0.02
+  # Simulated hardware limits, shared by both axes for now.
+  max_velocity_deg_s: 120.0
+  max_acceleration_deg_s2: 300.0
+  # Anti-windup: caps the accumulated integral term so a long period with
+  # the target out of reach doesn't cause a big overshoot once it's found.
+  integral_limit: 20.0
+
+motion_prediction:
+  # Per-track constant-velocity Kalman filter, in PIXEL coordinates. These are
+  # starting points that look reasonable on real webcam tracks, not values
+  # derived from a measured noise model -- tune by watching the predicted
+  # marker in scripts\preview_recovery.py.
+  #
+  # process_noise vs. measurement_noise is the classic Kalman trade-off:
+  # raise process_noise (or lower measurement_noise) to make the filter follow
+  # each new detection more closely (responsive but jittery); do the opposite
+  # to make it smoother but laggier. Their RATIO is what matters most.
+  process_noise: 50.0
+  measurement_noise: 5.0
+  # Keep a track's filter alive this long after its last detection so recovery
+  # can still read the just-lost target's last-known velocity. 1.0s outlives
+  # the tracker's own 30-frame (~1s) lost_track_buffer by a hair on purpose.
+  max_coast_seconds: 1.5
+
+recovery:
+  # Stage 1 reacquisition is IDENTITY-FREE: on loss we search toward where the
+  # target was heading and re-lock onto the nearest NEW track that appears
+  # near the predicted spot -- whoever it is. This is a labeled placeholder
+  # for Stage 2's real face/re-id-gated reacquisition; do not mistake it for
+  # actually recognizing the person. These knobs tune the mechanics only.
+  give_up_seconds: 5.0
+  # Cap on extrapolating the last-known velocity forward. Past this, we stop
+  # moving the predicted position (a stale velocity held too long flies away).
+  prediction_horizon_seconds: 1.0
+  # A new track re-locks only if within this fraction of the frame diagonal
+  # from the predicted position. Larger = grabs people farther from the
+  # prediction (more eager, more likely wrong -- no identity check yet).
+  reacquire_radius_fraction: 0.35
+  # Simulated search sweep fed to the gimbal while searching: a normalized
+  # (-1..1) error that oscillates around the predicted direction so the
+  # (simulated) camera scans for the target instead of freezing.
+  search_amplitude: 0.6
+  search_period_seconds: 2.0
+
+state_machine:
+  # Grace period before a missing target escalates from "brief dropout, hold
+  # and wait" (TEMPORARILY_OCCLUDED) to "actively search" (RECOVERY_SEARCH).
+  # Set roughly equal to the tracker's lost_track_buffer duration (30 frames
+  # ~= 1s at 30fps): within that window ByteTrack usually re-emits the SAME
+  # track id when the person reappears, so holding position beats swinging the
+  # camera into a search or grabbing whoever else is on screen.
+  occlusion_timeout_seconds: 1.0
+
+# Sections for drone_control, etc. are added as each module is implemented,
+# not stubbed out empty here ahead of time — an unused config field is a
+# bug waiting to hide a typo.

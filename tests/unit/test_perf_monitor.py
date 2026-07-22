@@ -11,16 +11,7 @@ import pytest
 from webcam_tracker.perf_monitor import PerfMonitor
 from webcam_tracker.perf_monitor import monitor as monitor_module
 
-
-class FakeClock:
-    def __init__(self, start: float = 0.0) -> None:
-        self.now = start
-
-    def __call__(self) -> float:
-        return self.now
-
-    def advance(self, seconds: float) -> None:
-        self.now += seconds
+from ._fake_clock import FakeClock
 
 
 class TestPerfMonitor:

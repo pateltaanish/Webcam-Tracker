@@ -191,14 +191,120 @@ selection behind the same interface, so nothing downstream has to change.
   first confirmed track and reports its status/error over a few seconds, to
   verify the whole chain without needing to click anything.
 
+## Simulated gimbal control (Stage 1.7)
+
+`src/webcam_tracker/gimbal_control` turns target_selection's normalized
+error into simulated pan/tilt commands via a PID controller per axis, with
+deadband, rate limiting, angle clamping, and anti-windup -- **no physical
+gimbal is required or driven**; there isn't one in this project yet. The
+point of building this now is to design and test the control logic against
+real tracking data, so a real motor driver can slot in later (Stage 3)
+behind the same interface without touching this code or anything upstream
+of it. It also includes an emergency-stop/resume state.
+
+- `scripts\preview_gimbal_control.py` -- live GUI window: same click-to-select
+  as target selection, plus an attitude-indicator-style widget (top-right)
+  showing the simulated gimbal's current position -- green normally, red
+  when an axis is saturated (hit its limit), orange when e-stopped. Press
+  `e` to emergency-stop, `r` to resume.
+- `scripts\smoke_test_gimbal_control.py` -- headless: prints pan/tilt
+  velocity + angle every frame as the auto-selected target moves.
+
+PID gains in `configs/default.yaml` are explicitly untuned placeholders --
+there's no physical gimbal yet to tune against; see the comments there.
+
+## Motion prediction & target-loss recovery (Stage 1.8)
+
+Two modules that handle a target *leaving frame* instead of just dropping it:
+
+- `src/webcam_tracker/motion_prediction` (`MotionPredictor`) runs a
+  from-scratch constant-velocity Kalman filter per track, smoothing the
+  jittery box center and, more importantly, *inferring each track's velocity*
+  (the detector only ever reports position). That velocity is what lets us
+  guess which way a lost target was heading.
+- `src/webcam_tracker/recovery` (`RecoveryController`) is a small
+  loss -> search -> reacquire state machine. When the selected target
+  disappears, it extrapolates where it went, drives a simulated search sweep
+  (fed to the gimbal), and re-locks onto the nearest *newly-appearing* track
+  near the predicted spot.
+
+**Important — this reacquisition is identity-FREE.** It grabs whoever walks
+into the predicted region, not necessarily the original person. It's a
+deliberately-labeled placeholder for Stage 2's real face/re-id-gated
+reacquisition, which replaces just that decision without changing the
+interface. It does *not* solve the "person leaves and comes back with a new
+track ID" problem on its own -- that needs identity (Stage 2).
+
+- `scripts\preview_recovery.py` -- live GUI: click-to-select, then walk out
+  of frame and watch the RECOVERY banner + predicted-position marker + re-lock
+  radius circle, with the gimbal widget sweeping in search; walk back in to
+  see it auto re-lock. Also keeps the gimbal e-stop ('e') / resume ('r') keys.
+- `scripts\smoke_test_recovery.py` -- headless: tracks you for a bit, then
+  *simulates* a loss (hides the target from recovery) and prints the search
+  playing out to GAVE_UP.
+
+## Tracking state machine (Stage 1.9)
+
+`src/webcam_tracker/state_machine` (`TrackingStateMachine`) is the "brain"
+that ties Stage 1 together. Perception (detection + tracking) runs upstream
+and hands it tracked people each frame; it coordinates target selection,
+motion prediction, recovery, and the gimbal into ONE authoritative state and
+one set of outputs per frame (a `SystemStatus`), and logs every state change
+as a structured event. The states (identity-free Stage 1 subset of
+`docs/02_architecture.md` §4):
+
+- **IDLE** -- nothing selected
+- **TRACKING** -- following the selected target
+- **TEMPORARILY_OCCLUDED** -- target briefly missing; hold position and wait
+  for the same track id to return (avoids over-reacting to a few-frame gap)
+- **RECOVERY_SEARCH** -- missing too long; run the recovery search sweep
+- **SAFE_HOVER_REQUESTED** -- search gave up
+- **STOPPED** -- emergency stop
+
+`SystemStatus.needs_drone_assist` (set when the gimbal is maxed out while it
+should be following) is the concrete signal a future `drone_control` will
+read to decide when to move the drone body. Reacquisition is still
+identity-free; Stage 2's identity check inserts at that exact decision point.
+
+- `scripts\preview_state_machine.py` -- live GUI with the state banner
+  (top-left, colored by state). This is the full pipeline; note how the
+  per-frame logic is now a single `state_machine.update(...)` call.
+- `scripts\smoke_test_state_machine.py` -- headless: follows you, then
+  simulates a loss and prints the state progression through to safe-hover.
+
+## Integration pass (Stage 1.10)
+
+The Stage 1 exit check, in two parts:
+
+- `tests\integration\test_pipeline.py` -- runs the **whole** pipeline (real
+  detector + tracker + state machine) over short "videos" built from bundled
+  sample images, asserting the mechanics of the three roadmap scenarios:
+  single person tracked, multiple people handled, and a person who leaves and
+  returns as a **new track ID** getting reacquired (the exact "comes back as
+  a new ID" case). Runs as part of `pytest`.
+- `scripts\integration_report.py` -- point it at a recorded clip (or a folder
+  of clips, or the webcam) and it prints a structured report: state
+  distribution, a timed list of state transitions, and loss / search /
+  reacquisition / give-up counts. Use it to eyeball real footage of the three
+  scenarios:
+  ```
+  .venv\Scripts\python.exe scripts\integration_report.py data\clips\cross.mp4
+  ```
+
 ## Status
 
-Stage 1.1 (repo scaffold) through 1.6 (manual target selection) complete.
-Verified against real webcam frames on the desktop USB webcam (GPU: RTX
-3060, CUDA confirmed available) -- a single person's track ID stayed stable
-across 99% of a 90-frame observation window, zero switches; target selection
-kept the target visible with zero "TARGET LOST" events across 29 frames
-while pixel error tracked real movement smoothly. Not yet verified against a
-laptop's built-in webcam -- run `scripts\list_cameras.py` there first. No
-identity/recognition code has been implemented yet -- see
-`docs/04_roadmap.md` for what's next.
+**Stage 1 is complete** (repo scaffold 1.1 through the integration pass 1.10)
+-- the full desktop tracking prototype is built, unit- and integration-tested,
+and verified against real webcam data on the desktop USB webcam (GPU: RTX
+3060, CUDA confirmed available): track IDs stable, target selection solid,
+gimbal rate-limiting + saturation correct, the state machine steps
+IDLE -> TRACKING -> (on loss) TEMPORARILY_OCCLUDED -> RECOVERY_SEARCH ->
+SAFE_HOVER_REQUESTED with timing matching config, and the full pipeline
+reacquires a person who returns as a new track ID. 149 tests (145 unit + 4
+full-pipeline integration), ruff + mypy clean. Not yet verified against a
+laptop's built-in webcam -- run `scripts\list_cameras.py` there first.
+Everything so far is identity-FREE by design (reacquisition re-locks the
+nearest returning track, not a verified person). **Next: Stage 2** --
+registration + a local encrypted profile database + face/Re-ID identity, which
+replaces the placeholder reacquisition with real "is this the registered
+person?" verification. See `docs/04_roadmap.md`.

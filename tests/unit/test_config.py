@@ -24,6 +24,13 @@ def test_load_config_reads_yaml_defaults() -> None:
     assert config.tracking.high_conf_det_threshold == 0.6
     assert config.perf_monitor.fps_window_seconds == 0.5
     assert config.perf_monitor.log_interval_seconds == 5.0
+    assert config.gimbal.pan.kp == 80.0
+    assert config.gimbal.pan.angle_limit_deg == 170.0
+    assert config.gimbal.tilt.angle_limit_deg == 60.0
+    assert config.gimbal.deadband == 0.02
+    assert config.gimbal.max_velocity_deg_s == 120.0
+    assert config.gimbal.max_acceleration_deg_s2 == 300.0
+    assert config.gimbal.integral_limit == 20.0
 
 
 def test_load_config_is_cached() -> None:

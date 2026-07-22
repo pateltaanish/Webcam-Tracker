@@ -98,6 +98,127 @@ class PerfMonitorConfig(BaseModel):
     )
 
 
+class GimbalAxisConfig(BaseModel):
+    """PID gains + angle limit for one gimbal axis (pan or tilt)."""
+
+    kp: float = Field(description="Proportional gain: deg/s of output per unit normalized error.")
+    ki: float = Field(ge=0.0, description="Integral gain: corrects small persistent error.")
+    kd: float = Field(ge=0.0, description="Derivative gain: dampens oscillation/overshoot.")
+    angle_limit_deg: float = Field(
+        gt=0.0, description="Max angle from neutral (0) this axis can reach."
+    )
+
+
+class GimbalConfig(BaseModel):
+    """Simulated gimbal controller settings (Stage 1.7). No real motors are
+    ever driven by this config -- see src/webcam_tracker/gimbal_control.
+
+    Gain values below are untuned placeholders (no physical gimbal exists
+    yet to tune against) -- chosen to produce plausible-looking simulated
+    motion, not validated against real hardware dynamics. Revisit once
+    Stage 3 has real hardware, or sooner if the live preview looks off.
+    """
+
+    pan: GimbalAxisConfig
+    tilt: GimbalAxisConfig
+    deadband: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Normalized error (0-1) below which output is forced to zero, to avoid jitter.",
+    )
+    max_velocity_deg_s: float = Field(
+        gt=0.0, description="Max commanded angular velocity, either axis."
+    )
+    max_acceleration_deg_s2: float = Field(
+        gt=0.0, description="Max change in commanded velocity per second (rate limiting)."
+    )
+    integral_limit: float = Field(
+        gt=0.0, description="Clamp on the accumulated integral term (anti-windup)."
+    )
+
+
+class MotionPredictionConfig(BaseModel):
+    """Per-track constant-velocity Kalman filter settings (Stage 1.8).
+
+    Operates in pixel coordinates (that's what tracked boxes are in). Consumed
+    by the motion_prediction module. Values are starting points tuned to look
+    reasonable on real webcam tracks, not derived from a calibrated noise
+    model -- adjust if predicted positions lag or jitter.
+    """
+
+    process_noise: float = Field(
+        gt=0.0,
+        description="Assumed acceleration variance: higher = filter follows sudden "
+        "velocity changes faster but is jerkier/noisier.",
+    )
+    measurement_noise: float = Field(
+        gt=0.0,
+        description="Assumed detection-position noise: higher = smoother but laggier "
+        "estimates (trusts the model over each new measurement).",
+    )
+    max_coast_seconds: float = Field(
+        gt=0.0,
+        description="How long to keep a track's filter alive with no new measurement "
+        "before discarding it -- lets recovery read a just-lost target's last-known "
+        "velocity. Independent of the tracker's own lost_track_buffer.",
+    )
+
+
+class RecoveryConfig(BaseModel):
+    """Target-loss search + reacquisition settings (Stage 1.8). Consumed by the
+    recovery module.
+
+    NOTE: Stage 1 reacquisition is identity-FREE -- it re-locks onto the
+    nearest newly-appearing track near the predicted position, whoever that
+    is. It is a deliberately-labeled placeholder for the real identity-gated
+    reacquisition that arrives in Stage 2 (face/re-id). These knobs tune the
+    *mechanics* only.
+    """
+
+    give_up_seconds: float = Field(
+        gt=0.0, description="How long to search after a loss before giving up on the target."
+    )
+    prediction_horizon_seconds: float = Field(
+        gt=0.0,
+        description="Cap on how far ahead the last-known velocity is extrapolated to "
+        "estimate where the target went -- a stale velocity extrapolated too long "
+        "would fly off-screen.",
+    )
+    reacquire_radius_fraction: float = Field(
+        gt=0.0,
+        le=2.0,
+        description="A newly-appearing track re-locks only if within this fraction of "
+        "the frame diagonal from the predicted target position. Larger = more eager "
+        "(and more likely to grab the wrong person, since there's no identity check yet).",
+    )
+    search_amplitude: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Normalized (0-1) amplitude of the simulated search sweep fed to the "
+        "gimbal while searching -- how far off-center the search points.",
+    )
+    search_period_seconds: float = Field(
+        gt=0.0, description="Duration of one full back-and-forth search sweep oscillation."
+    )
+
+
+class StateMachineConfig(BaseModel):
+    """Tracking state machine settings (Stage 1.9). Consumed by the
+    state_machine module, which coordinates selection + prediction + recovery
+    + gimbal into one authoritative per-frame decision.
+    """
+
+    occlusion_timeout_seconds: float = Field(
+        gt=0.0,
+        description="How long the target can be missing before a brief dropout "
+        "(TEMPORARILY_OCCLUDED -- hold position, wait for the same track to "
+        "return) escalates into an active recovery search (RECOVERY_SEARCH). "
+        "Roughly match the tracker's lost_track_buffer duration: within that "
+        "window the tracker usually re-emits the SAME track id, so holding beats "
+        "swinging the camera or grabbing a different person.",
+    )
+
+
 class AppConfig(BaseSettings):
     """Root application config, assembled from YAML defaults + env overrides."""
 
@@ -114,6 +235,10 @@ class AppConfig(BaseSettings):
     detection: DetectionConfig
     tracking: TrackingConfig
     perf_monitor: PerfMonitorConfig
+    gimbal: GimbalConfig
+    motion_prediction: MotionPredictionConfig
+    recovery: RecoveryConfig
+    state_machine: StateMachineConfig
 
     @classmethod
     def settings_customise_sources(

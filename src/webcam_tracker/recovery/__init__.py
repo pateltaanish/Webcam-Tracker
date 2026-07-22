@@ -1,7 +1,25 @@
-"""Target-loss recovery.
+"""Target-loss recovery (Stage 1.8).
 
-On loss, snapshots last-known target state, predicts direction from motion
-history, drives a bounded search pattern, and re-verifies candidates against
-stored identity/appearance data before resuming tracking (see
-docs/00_engineering_spec.md sec 3.5). Implemented starting Stage 1.8.
+On loss of the selected target, predicts where it went (from
+motion_prediction's velocity estimate), drives a simulated search sweep, and
+re-locks onto the nearest newly-appearing track near the predicted region.
+
+Stage 1's reacquisition is IDENTITY-FREE -- a labeled placeholder for the
+real face/re-id-gated reacquisition in Stage 2, which replaces the "nearest
+new track" decision without changing this module's interface. See
+controller.py for the full caveat.
 """
+
+from webcam_tracker.recovery.controller import (
+    RecoveryController,
+    RecoveryState,
+    RecoveryStatus,
+)
+from webcam_tracker.recovery.factory import create_recovery_controller
+
+__all__ = [
+    "RecoveryController",
+    "RecoveryState",
+    "RecoveryStatus",
+    "create_recovery_controller",
+]

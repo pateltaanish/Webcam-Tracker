@@ -82,21 +82,128 @@ scaffolding around it is solid.
      across 29 frames while pixel error tracked real left/right movement
      smoothly (-193px to +28px), normalized error staying in the expected
      -1..1 range.
-1.7. `gimbal_control` (simulated): pixel error → normalized error → simulated
-     pan/tilt velocity, deadband, clamping. Output logged/displayed, no real
-     motors. Unit tests for the math independent of any camera.
-1.8. `motion_prediction` + `recovery` (generic, no identity yet): on track
-     loss, predict direction from Kalman velocity, simulate a search sweep,
-     re-lock on the nearest *newly appearing* track only if it appears near
-     the predicted region (a placeholder for real identity-based
-     reacquisition, clearly labeled as such).
-1.9. `state_machine` wiring all of the above together, with structured event
-     logging.
-1.10. Integration test pass: run against a handful of recorded test videos
-      (single person, two people crossing paths, person leaving/re-entering
-      frame) and confirm logs/behavior make sense. This is our Stage 1 exit
-      criterion — **not** perfect tracking, just correct mechanics we can
-      build identity on top of.
+1.7. **DONE.** `gimbal_control` (simulated): `AxisController` (single-axis
+     PID + deadband + rate limiting + angle clamp + anti-windup) used twice
+     by `GimbalController` (pan + tilt), consuming target_selection's
+     normalized error. No real motors -- see the module's own docstring for
+     why building this now, without hardware, is still valuable (design/test
+     the control logic against real tracking data; a real driver slots in
+     later behind the same GimbalCommand interface). Includes an
+     emergency-stop/resume state. Deliberately "dumb": it only reacts to the
+     error it's given, no search/neutral-position policy of its own -- that
+     belongs to state_machine (Stage 1.9). 29 unit tests, each PID term (P/I/D)
+     verified against hand-derived expected numbers via a fake clock, 100%
+     coverage on both controller files. Live verification:
+     `scripts\preview_gimbal_control.py` (attitude-indicator-style widget,
+     e-stop/resume bound to keys). Verified end-to-end against real webcam
+     frames (`scripts\smoke_test_gimbal_control.py`): velocity ramped
+     smoothly frame-to-frame (rate limiting working, no jumps), both axes
+     correctly saturated at their configured angle limits (±170° pan, +60°
+     tilt) while still reporting the commanded velocity being blocked --
+     the signal drone_control will eventually consume.
+     drone_control itself is deferred (not part of this step): saturation
+     -> movement-request policy is more naturally driven by state_machine
+     (Stage 1.9), so building it now would mean guessing at that interface
+     rather than deriving it from a real state machine.
+1.8. **DONE.** `motion_prediction` + `recovery` (generic, no identity yet).
+     `motion_prediction`: a from-scratch constant-velocity Kalman filter
+     (`KalmanFilter2D`, state = [x, y, vx, vy] in pixels) per track, managed
+     by `MotionPredictor` (one filter per track_id, injectable clock for
+     dt, coasts a just-lost track for `max_coast_seconds` so its last-known
+     velocity is still readable). `recovery`: `RecoveryController`, a small
+     loss->search->reacquire state machine (`RecoveryState`:
+     IDLE/TRACKING/SEARCHING/REACQUIRED/GAVE_UP) that, on target loss,
+     extrapolates the last-known position+velocity (capped at
+     `prediction_horizon_seconds`), drives a simulated horizontal search
+     sweep (a normalized error fed to the gimbal, biased toward the predicted
+     direction), and re-locks onto the nearest *newly-appearing* track within
+     `reacquire_radius_fraction` of the predicted spot -- **identity-free**,
+     an explicitly-labeled placeholder for Stage 2's face/re-id-gated
+     reacquisition that slots in at that exact decision point. It
+     *recommends* a track_id rather than mutating the selection itself
+     (selection stays owned by TargetSelector), and does not own overall
+     system state (that's state_machine, 1.9). New `draw_recovery_overlay`
+     (state banner + predicted-position marker + re-lock radius circle).
+     24 new unit tests: Kalman velocity convergence on constant-velocity
+     input, stationary-point stability, pure-lookahead non-mutation,
+     coast-then-prune, and every recovery transition + the exact
+     predicted-position extrapolation math, all on a fake clock (145 tests
+     total, all passing; ruff + mypy src scripts clean). Live verification:
+     `scripts\preview_recovery.py` (walk out of frame -> search -> walk back
+     in -> auto re-lock, note the track-ID change it papers over).
+     `scripts\smoke_test_recovery.py` verifies the loss path headlessly by
+     *simulating* a loss (hiding the target from recovery after a tracking
+     phase) and watching SEARCHING -> predicted extrapolation -> GAVE_UP.
+     NOTE: live smoke-test run pending a person in frame at run time; the
+     mechanics are covered exactly by the unit tests regardless.
+1.9. **DONE.** `state_machine`: `TrackingStateMachine` is the authoritative
+     coordinator. Perception (detector + tracker) runs upstream and feeds it
+     tracked people each frame; it owns the four *decision* components
+     (TargetSelector, MotionPredictor, RecoveryController, GimbalController)
+     and collapses them into ONE `SystemStatus` per frame (state + target
+     status + recovery status + gimbal command + `needs_drone_assist` +
+     `reacquired_track_id`), logging every transition as a structured event.
+     States are the Stage-1 (identity-free) subset of docs/02_architecture.md
+     sec 4: IDLE, TRACKING, TEMPORARILY_OCCLUDED, RECOVERY_SEARCH,
+     SAFE_HOVER_REQUESTED, STOPPED. A key behavior the state machine adds on
+     top of the raw modules: a brief-dropout grace period
+     (`occlusion_timeout_seconds`, ~= the tracker's lost_track_buffer) during
+     which a missing target is TEMPORARILY_OCCLUDED -- the gimbal HOLDS and
+     waits for the same track id to return -- before escalating to an active
+     RECOVERY_SEARCH; this avoids swinging the camera (or grabbing a different
+     person) on a few-frame detection gap. Reacquisition stays identity-free;
+     the doc's REGISTERING/CANDIDATE_DETECTED/VERIFYING_IDENTITY states are
+     the Stage-2 slot-in point (identity verification inserts at the reacquire
+     decision), and `needs_drone_assist` (gimbal saturated while it should be
+     following) is the concrete signal a future drone_control will consume.
+     11 new unit tests wire the real components onto one fake clock and drive
+     whole scenarios frame-by-frame (track -> occlude -> search -> give up, and
+     -> reacquire, plus e-stop and drone-assist), 145 total. New
+     `draw_state_banner`. Live verification: `scripts\smoke_test_state_machine.py`
+     ran end-to-end against the real webcam -- IDLE -> TRACKING, then a
+     simulated loss produced TEMPORARILY_OCCLUDED (frame 0) ->
+     RECOVERY_SEARCH (frame 6, ~1s = occlusion timeout) ->
+     SAFE_HOVER_REQUESTED (frame 32, ~5s later = recovery give-up), timing
+     matching config exactly. `scripts\preview_state_machine.py` is the live
+     GUI (state banner + the per-frame logic collapsed to one update() call).
+     drone_control is still deferred but now has a defined interface to read
+     (`SystemStatus.state` + `needs_drone_assist`).
+1.10. **DONE — Stage 1 exit criterion met.** Two-part integration pass:
+      (a) Automated: `tests/integration/test_pipeline.py` drives the WHOLE
+      pipeline (real detector + tracker + state machine and all its real
+      sub-components) over short "videos" built from Ultralytics' bundled
+      sample images (real inference on real people, frame contents we
+      control), with an injected fake clock so the time-based transitions are
+      deterministic. Four scenarios, all passing: a single person is tracked
+      and followed with a stable id; multiple people (bus.jpg, 4 detected) are
+      all tracked while the state machine follows exactly one; a
+      leave-then-return escalates TRACKING -> TEMPORARILY_OCCLUDED ->
+      RECOVERY_SEARCH and recovers; and — the key one — a person who leaves
+      long enough to come back as a **new track id** (>lost_track_buffer) is
+      reacquired by recovery and followed again, which is exactly the
+      "comes back as a new ID" case, now handled end to end.
+      (b) Qualitative tool: `scripts/integration_report.py` runs the pipeline
+      over a real video file/folder (or the webcam) and prints a structured
+      report — state distribution, timed transition list, and loss/search/
+      reacquire/give-up tallies — for eyeballing recorded clips (one person,
+      two crossing, leave/re-enter). Verified live against the webcam: over a
+      2s clip the target held TRACKING 70% of frames and correctly absorbed
+      10 single-frame detection dropouts as brief TEMPORARILY_OCCLUDED blips
+      that each returned to TRACKING WITHOUT escalating to a search — the
+      occlusion grace period doing its job. Also added optional `clock`
+      injection to the gimbal/motion/recovery/state_machine factories to make
+      this deterministic (fake clock) and video-time (report tool) driving
+      possible.
+      145 total (134 unit + 11 state-machine unit) + 4 new full-pipeline
+      integration tests, ruff + mypy clean.
+
+**Stage 1 is complete.** The full desktop tracking prototype — detection,
+tracking, target selection, simulated gimbal control, motion prediction,
+target-loss recovery, and the authoritative state machine — is built, unit-
+and integration-tested, and verified against real webcam data. Everything is
+identity-FREE by design; the "which specific person is this" problem is
+Stage 2. `drone_control` remains deferred with a defined interface to read
+(`SystemStatus.state` + `needs_drone_assist`).
 
 ## Stage 2 — Registration & identity database
 
