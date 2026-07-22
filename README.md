@@ -14,6 +14,7 @@ consented. It is not designed for surveillance or identifying strangers. See
 - [`docs/02_architecture.md`](docs/02_architecture.md) -- pipeline design, model comparisons + selections, state machine
 - [`docs/03_onboard_computer.md`](docs/03_onboard_computer.md) -- embedded hardware comparison + recommendation
 - [`docs/04_roadmap.md`](docs/04_roadmap.md) -- staged build plan
+- [`docs/database_design.md`](docs/database_design.md) -- Stage 2 identity + encrypted-database design (consent, encryption, schema) -- read before Stage 2 code
 
 ## Setup (Windows, Stage 1)
 

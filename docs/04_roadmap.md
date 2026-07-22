@@ -207,9 +207,16 @@ Stage 2. `drone_control` remains deferred with a defined interface to read
 
 ## Stage 2 — Registration & identity database
 
-2.1. `database`: local encrypted store (see `docs/database_design.md`, to be
-     written alongside this stage) for profiles + embeddings + consent
-     metadata.
+**Design doc written: `docs/database_design.md`** (read it first). Confirmed
+decisions (2026-07-22): encryption keyed by an **operator passphrase**
+(Argon2id → AES-256-GCM envelope encryption, key never stored); face model is
+**InsightFace SCRFD + ArcFace**; build order is a **face-first vertical slice**
+(database → registration → face → identity fusion, then add body Re-ID).
+
+2.1. `database`: local encrypted store (see `docs/database_design.md`) for
+     profiles + embeddings + consent metadata. SQLite + application-layer
+     AES-256-GCM on sensitive columns; passphrase unlock fails closed; delete
+     is a real delete; audit log for every identity decision.
 2.2. Registration CLI/flow: capture samples, quality checks (blur/exposure/
      single-face), multi-angle prompts, embedding generation (face via
      SCRFD+ArcFace, optional Re-ID via OSNet), storage.
