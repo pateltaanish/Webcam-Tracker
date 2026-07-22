@@ -172,6 +172,31 @@ state_machine:
   # camera into a search or grabbing whoever else is on screen.
   occlusion_timeout_seconds: 1.0
 
+identity:
+  # Stage 2: encrypted registered-person profile store. See
+  # docs/database_design.md. The encryption key is NEVER stored -- it's derived
+  # at runtime from the operator passphrase; only the store location and the
+  # (non-secret) Argon2id cost parameters live here.
+  #
+  # store_dir holds two files, BOTH gitignored (data/ is ignored):
+  #   profiles.db   -- SQLite store; sensitive columns encrypted (AES-256-GCM)
+  #   keyvault.json -- salt + KDF params + wrapped data key (safe in the clear)
+  store_dir: "data/identity"
+  db_filename: "profiles.db"
+  keyvault_filename: "keyvault.json"
+  # Argon2id KDF cost. Tuned so an unlock takes ~0.5s on the RTX 3060 dev
+  # machine (measured: time_cost=4 + 512 MiB -> 0.51s) -- deliberately slow to
+  # blunt brute force, and memory-hard (512 MiB) to blunt GPU/ASIC attacks.
+  # Raising these later is safe: params are stored per-store in keyvault.json,
+  # so existing stores keep the values they were created with. memory is in
+  # KiB (524288 = 512 MiB).
+  argon2_time_cost: 4
+  argon2_memory_kib: 524288
+  argon2_parallelism: 4
+  # Setup refuses a shorter operator passphrase (the KDF slows brute force but
+  # can't rescue a trivially guessable passphrase -- see threat model sec 2).
+  min_passphrase_length: 12
+
 # Sections for drone_control, etc. are added as each module is implemented,
 # not stubbed out empty here ahead of time — an unused config field is a
 # bug waiting to hide a typo.

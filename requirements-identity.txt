@@ -1,0 +1,17 @@
+# Stage 2 (identity) dependencies -- kept separate from requirements.txt and
+# requirements-ml.txt because they're only needed once identity/registration
+# work begins, and (for the face model, added later) are a heavy download.
+#
+# Install with:
+#   .venv\Scripts\python.exe -m pip install -r requirements-identity.txt
+#
+# Stage 2.1 (encrypted database) needs only the two crypto libraries below.
+# The InsightFace face-model stack (insightface, onnxruntime-gpu) is added
+# here when Stage 2.3 (face_recognition) lands -- see docs/database_design.md
+# sec 9. Deferring it avoids a large, install-fiddly download before it's used.
+
+# AES-256-GCM authenticated encryption for embeddings + profile fields.
+cryptography==49.0.0
+
+# Argon2id password-based key derivation (operator passphrase -> key).
+argon2-cffi==25.1.0

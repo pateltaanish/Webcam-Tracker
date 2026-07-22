@@ -304,8 +304,14 @@ SAFE_HOVER_REQUESTED with timing matching config, and the full pipeline
 reacquires a person who returns as a new track ID. 149 tests (145 unit + 4
 full-pipeline integration), ruff + mypy clean. Not yet verified against a
 laptop's built-in webcam -- run `scripts\list_cameras.py` there first.
-Everything so far is identity-FREE by design (reacquisition re-locks the
-nearest returning track, not a verified person). **Next: Stage 2** --
-registration + a local encrypted profile database + face/Re-ID identity, which
-replaces the placeholder reacquisition with real "is this the registered
-person?" verification. See `docs/04_roadmap.md`.
+Everything through Stage 1 is identity-FREE by design (reacquisition re-locks
+the nearest returning track, not a verified person).
+
+**Stage 2 (registration & identity) is underway.** Stage 2.1 is done: the
+`database` module -- a local, encrypted (`data/identity/`, gitignored) profile
+store for registered people + their embeddings + consent metadata, keyed by an
+operator passphrase (Argon2id -> AES-256-GCM envelope encryption; passphrase
+never stored, unlock fails closed). Needs the Stage 2 deps:
+`.venv\Scripts\python.exe -m pip install -r requirements-identity.txt`. Next
+is registration (2.2) then face recognition (2.3) -- see `docs/04_roadmap.md`
+and `docs/database_design.md`.

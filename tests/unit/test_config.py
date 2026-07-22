@@ -31,6 +31,12 @@ def test_load_config_reads_yaml_defaults() -> None:
     assert config.gimbal.max_velocity_deg_s == 120.0
     assert config.gimbal.max_acceleration_deg_s2 == 300.0
     assert config.gimbal.integral_limit == 20.0
+    assert config.state_machine.occlusion_timeout_seconds == 1.0
+    assert config.identity.store_dir == "data/identity"
+    assert config.identity.db_filename == "profiles.db"
+    assert config.identity.keyvault_filename == "keyvault.json"
+    assert config.identity.argon2_memory_kib == 524288
+    assert config.identity.min_passphrase_length == 12
 
 
 def test_load_config_is_cached() -> None:

@@ -152,9 +152,10 @@ Envelope encryption with an operator passphrase. Two keys:
 ### 5.1 Deriving the KEK from the passphrase
 
 - KDF: **Argon2id** (memory-hard, resists GPU brute force), via
-  `argon2-cffi`. Parameters tuned to ~0.5–1s on the dev machine (e.g. 64 MiB
-  memory, time-cost 3, parallelism 4) — recorded in `keyvault.json` so they
-  can be raised later without breaking existing stores.
+  `argon2-cffi`. Parameters tuned to ~0.5s on the dev machine (**measured:
+  time_cost=4, 512 MiB, parallelism=4 → 0.51s**; 64 MiB/time_cost=3 was only
+  0.04s, far too cheap) — recorded in `keyvault.json` so they can be raised
+  later without breaking existing stores.
 - A random 16-byte **salt** (stored in `keyvault.json`, plaintext — salts are
   not secret) makes precomputation/rainbow tables useless.
 - Output: a 256-bit KEK, held in memory only for as long as needed to unwrap

@@ -213,10 +213,21 @@ decisions (2026-07-22): encryption keyed by an **operator passphrase**
 **InsightFace SCRFD + ArcFace**; build order is a **face-first vertical slice**
 (database → registration → face → identity fusion, then add body Re-ID).
 
-2.1. `database`: local encrypted store (see `docs/database_design.md`) for
-     profiles + embeddings + consent metadata. SQLite + application-layer
-     AES-256-GCM on sensitive columns; passphrase unlock fails closed; delete
-     is a real delete; audit log for every identity decision.
+2.1. **DONE.** `database`: local encrypted store (see
+     `docs/database_design.md`) for profiles + embeddings + consent metadata.
+     `ProfileStore` = SQLite + application-layer AES-256-GCM on sensitive
+     columns (display name, embedding vectors), keyed by an operator passphrase
+     via Argon2id → wrapped data key (envelope encryption; passphrase never
+     stored). Passphrase unlock **fails closed** (wrong passphrase → the GCM
+     auth check rejects it, no partial unlock); `add/get/list/revoke/delete`
+     people + embeddings; consent events + an audit log; `change_passphrase`
+     re-wraps the key without re-encrypting data. Argon2id cost tuned to a
+     ~0.5s unlock (time_cost=4, 512 MiB — measured). New deps
+     (`cryptography`, `argon2-cffi`) pinned in `requirements-identity.txt`.
+     24 unit tests including the security-critical ones: wrong-passphrase-
+     fails-closed, plaintext-name/embedding-bytes-absent-from-the-file
+     (encrypted at rest), delete-really-removes-data, passphrase rotation.
+     Store lives at `data/identity/` (gitignored). No face model yet (2.3).
 2.2. Registration CLI/flow: capture samples, quality checks (blur/exposure/
      single-face), multi-angle prompts, embedding generation (face via
      SCRFD+ArcFace, optional Re-ID via OSNet), storage.

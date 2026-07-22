@@ -219,6 +219,38 @@ class StateMachineConfig(BaseModel):
     )
 
 
+class IdentityConfig(BaseModel):
+    """Identity / encrypted-profile-database settings (Stage 2). Consumed by
+    the database module. See docs/database_design.md.
+
+    The encryption key is NEVER stored here or anywhere on disk -- it's derived
+    at runtime from the operator passphrase. These are only the store location
+    and the (non-secret) KDF cost parameters.
+    """
+
+    store_dir: str = Field(
+        description="Directory (relative to repo root unless absolute) holding the "
+        "encrypted profile database and its key-vault sidecar. Gitignored."
+    )
+    db_filename: str = Field(description="SQLite profile-store filename within store_dir.")
+    keyvault_filename: str = Field(
+        description="Plaintext key-vault sidecar (salt + KDF params + wrapped data key) "
+        "within store_dir. Safe to store in the clear; useless without the passphrase."
+    )
+    argon2_time_cost: int = Field(
+        gt=0, description="Argon2id iterations. Higher = slower unlock, harder brute force."
+    )
+    argon2_memory_kib: int = Field(
+        ge=8192,
+        description="Argon2id memory in KiB. Higher = more GPU-brute-force-resistant "
+        "(and more RAM per unlock).",
+    )
+    argon2_parallelism: int = Field(gt=0, description="Argon2id parallelism (lanes).")
+    min_passphrase_length: int = Field(
+        gt=0, description="Minimum operator passphrase length enforced at setup."
+    )
+
+
 class AppConfig(BaseSettings):
     """Root application config, assembled from YAML defaults + env overrides."""
 
@@ -239,6 +271,7 @@ class AppConfig(BaseSettings):
     motion_prediction: MotionPredictionConfig
     recovery: RecoveryConfig
     state_machine: StateMachineConfig
+    identity: IdentityConfig
 
     @classmethod
     def settings_customise_sources(
