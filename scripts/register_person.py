@@ -26,10 +26,9 @@ import getpass
 import cv2
 import numpy as np
 
-from webcam_tracker.config import AppConfig, load_config
+from webcam_tracker.config import load_config
 from webcam_tracker.database import (
     InvalidPassphraseError,
-    ProfileStore,
     WeakPassphraseError,
     create_profile_store,
 )
@@ -54,28 +53,32 @@ _CONSENT_TEXT = (
 )
 
 
-def _open_store(passphrase: str, config: AppConfig) -> ProfileStore:
-    store = create_profile_store(config)
-    if store.is_initialized():
-        store.unlock(passphrase)
-    else:
-        print("No identity store yet -- creating a new encrypted store with this passphrase.")
-        store.initialize(passphrase)
-    return store
-
-
 def main() -> None:
     config = load_config()
     configure_logging(level=config.logging.level, json_format=False)
 
     # 1) Operator passphrase -> unlock/create the encrypted store.
+    store = create_profile_store(config)
+    if store.is_initialized():
+        print("Enter the operator passphrase to unlock the existing identity store.")
+    else:
+        minimum = config.identity.min_passphrase_length
+        print(
+            "No identity store exists yet. The passphrase you enter now BECOMES the\n"
+            f"store's master passphrase (at least {minimum} characters, and there's no\n"
+            "recovery if you forget it)."
+        )
     passphrase = getpass.getpass("Operator passphrase: ")
     try:
-        store = _open_store(passphrase, config)
+        if store.is_initialized():
+            store.unlock(passphrase)
+        else:
+            store.initialize(passphrase)
     except InvalidPassphraseError:
         raise SystemExit("Wrong passphrase -- the store did not unlock.") from None
     except WeakPassphraseError as exc:
         raise SystemExit(f"Passphrase rejected: {exc}") from None
+    print("\nStore ready. A few questions here in the terminal, then a camera window opens.\n")
 
     try:
         # 2) Who, and explicit consent.

@@ -40,6 +40,7 @@ def test_load_config_reads_yaml_defaults() -> None:
     assert config.face.model_pack == "buffalo_l"
     assert config.face.det_size == 640
     assert config.face.device == "cpu"
+    assert config.face.match_threshold == 0.35
     assert config.registration.samples_required == 5
     assert config.registration.consent_version == "v1"
     assert config.registration.min_face_fraction == 0.02

@@ -248,9 +248,20 @@ decisions (2026-07-22): encryption keyed by an **operator passphrase**
      bit-exact through the encrypt→disk→decrypt round trip. 178 tests total.
      (Matching against the store — turning an embedding into "who is this?" —
      is 2.3.)
-2.3. `face_recognition` + `reid` modules: embedding extraction + cosine-similarity
-     comparison against stored profiles, with confidence thresholds and an
-     explicit "unknown" outcome.
+2.3. **Face matching DONE (Re-ID slice deferred).** `FaceMatcher` compares a
+     query ArcFace embedding against the enrolled profiles' stored embeddings
+     by cosine similarity (a single vectorized dot product -- embeddings are
+     L2-normalized), returning the best-matching active person or an explicit
+     `UNKNOWN` when nothing clears `face.match_threshold` (0.35 placeholder,
+     tuned for real in 2.5). Loads all active templates from the unlocked store
+     ONCE into memory (decrypt once, match per-frame cheaply); revoked people
+     are excluded so they stop matching. `scripts/preview_face_match.py` is the
+     live demo: labels each webcam face with the matched name+score (green) or
+     UNKNOWN (red). 7 new tests incl. an integration test on the real model:
+     enroll one person, then recognize them in the full image while a different
+     person correctly returns UNKNOWN. 185 tests total. The **`reid`** (OSNet
+     body-appearance) slice is still to come -- it extends the same
+     match-against-store pattern for when the face isn't visible.
 2.4. `identity` fusion module: combines face-match, reid-match, and temporal
      consistency into the confidence score consumed by the state machine.
      Replace Stage 1's placeholder reacquisition logic with real

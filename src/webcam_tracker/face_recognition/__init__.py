@@ -10,12 +10,16 @@ see docs/model_licenses.md.
 """
 
 from webcam_tracker.face_recognition.embedder import FaceEmbedder, FaceEmbedderError
-from webcam_tracker.face_recognition.factory import create_face_embedder
+from webcam_tracker.face_recognition.factory import create_face_embedder, create_face_matcher
+from webcam_tracker.face_recognition.matcher import FaceMatcher, MatchResult
 from webcam_tracker.face_recognition.models import DetectedFace
 
 __all__ = [
     "DetectedFace",
     "FaceEmbedder",
     "FaceEmbedderError",
+    "FaceMatcher",
+    "MatchResult",
     "create_face_embedder",
+    "create_face_matcher",
 ]

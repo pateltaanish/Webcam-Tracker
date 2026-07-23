@@ -206,6 +206,11 @@ face:
   # "cpu" is fine for the one-time registration flow. Switch to "cuda" (needs
   # onnxruntime-gpu) for GPU inference in the live identity loop later.
   device: "cpu"
+  # Minimum cosine similarity to call a face a registered person (else UNKNOWN).
+  # ArcFace embeddings are unit vectors, so this is in -1..1; same-person pairs
+  # typically score well above different-person pairs. 0.35 is a starting point
+  # -- tune against your own captured data in Stage 2.5 (measure FAR/FRR).
+  match_threshold: 0.35
 
 registration:
   # Bump when the consent terms shown at enrollment change; stored per person.

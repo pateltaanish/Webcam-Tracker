@@ -314,14 +314,20 @@ the nearest returning track, not a verified person).
   embeddings + consent metadata, keyed by an operator passphrase (Argon2id ->
   AES-256-GCM envelope encryption; passphrase never stored, unlock fails
   closed).
-- **2.2 (done):** the `face_recognition` module (InsightFace SCRFD + ArcFace
+- **2.2 (done):** the `face_recognition` embedder (InsightFace SCRFD + ArcFace
   512-d embeddings) and the `registration` flow (quality gates + consent-first
   enrollment). Enroll a consenting person from the webcam with
   `.venv\Scripts\python.exe scripts\register_person.py` -- it stores face
-  *embeddings* only, never images.
+  *embeddings* only, never images. (First-run passphrase must be >=12 chars,
+  and the name/consent prompts are in the terminal before the camera opens.)
+- **2.3 (done):** face *matching* -- `FaceMatcher` recognizes enrolled people
+  by cosine similarity, with an explicit `UNKNOWN` for everyone else. See it
+  live: `.venv\Scripts\python.exe scripts\preview_face_match.py` labels each
+  webcam face with the matched name (green) or UNKNOWN (red).
 
 Needs the Stage 2 deps:
 `.venv\Scripts\python.exe -m pip install -r requirements-identity.txt` (the
-face model auto-downloads ~280 MB on first use). Next is face *matching*
-against the store (2.3) then identity fusion into the state machine (2.4) --
-see `docs/04_roadmap.md` and `docs/database_design.md`.
+face model auto-downloads ~280 MB on first use). Next is identity fusion into
+the state machine (2.4) -- replacing the Stage 1 placeholder reacquisition with
+real identity-gated reacquisition -- plus the body Re-ID slice. See
+`docs/04_roadmap.md` and `docs/database_design.md`.

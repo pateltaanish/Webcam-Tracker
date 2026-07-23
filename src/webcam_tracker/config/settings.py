@@ -263,6 +263,14 @@ class FaceConfig(BaseModel):
     device: str = Field(
         description="'cpu' (onnxruntime) or 'cuda' (needs onnxruntime-gpu + matching CUDA)."
     )
+    match_threshold: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Minimum cosine similarity (ArcFace embeddings are unit vectors, so "
+        "similarity is in -1..1) for a face to count as a registered person; below this "
+        "the result is UNKNOWN. Starting placeholder -- tune on real data in Stage 2.5 "
+        "(FAR/FRR). Higher = fewer false accepts, more false rejects.",
+    )
 
 
 class RegistrationConfig(BaseModel):
