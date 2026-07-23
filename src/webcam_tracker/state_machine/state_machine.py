@@ -40,6 +40,9 @@ import enum
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import numpy as np
 
 from webcam_tracker.gimbal_control import GimbalCommand, GimbalController
 from webcam_tracker.logging_utils import get_logger
@@ -47,6 +50,12 @@ from webcam_tracker.motion_prediction import MotionPredictor
 from webcam_tracker.recovery import RecoveryController, RecoveryState, RecoveryStatus
 from webcam_tracker.target_selection import TargetSelector, TargetStatus
 from webcam_tracker.tracking import TrackedPerson
+
+if TYPE_CHECKING:
+    # Imported for typing only -- the identity stack pulls the optional Stage 2
+    # dependencies, and the state machine must stay importable (and Stage 1
+    # usable) without them. The injected identity object is duck-typed at runtime.
+    from webcam_tracker.identity import IdentityTracker
 
 logger = get_logger(__name__)
 
@@ -101,6 +110,7 @@ class TrackingStateMachine:
         recovery: RecoveryController,
         gimbal: GimbalController,
         occlusion_timeout_seconds: float,
+        identity: IdentityTracker | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._selector = selector
@@ -108,11 +118,13 @@ class TrackingStateMachine:
         self._recovery = recovery
         self._gimbal = gimbal
         self._occlusion_timeout = occlusion_timeout_seconds
+        self._identity = identity
         self._clock = clock
 
         self._state = TrackingState.IDLE
         self._state_since = clock()
         self._lost_since: float | None = None
+        self._target_person_id: str | None = None
 
     @property
     def selector(self) -> TargetSelector:
@@ -131,14 +143,51 @@ class TrackingStateMachine:
     def resume(self) -> None:
         self._gimbal.resume()
 
+    def select_person(self, person_id: str) -> None:
+        """Identity mode: follow a registered person (by id) across track-id
+        changes. Requires an IdentityTracker and that `update()` be given the
+        frame image. The person's live track is resolved by identity every
+        frame, so a returning target is reacquired by FACE, not by geometry
+        -- and reacquisition onto a merely-nearby stranger is suppressed.
+        Requires an identity tracker; raises if none was provided."""
+        if self._identity is None:
+            raise RuntimeError(
+                "select_person requires the state machine to have an IdentityTracker"
+            )
+        self._target_person_id = person_id
+        self._selector.clear()  # start fresh; identity re-locks once it confirms a track
+
+    @property
+    def target_person_id(self) -> str | None:
+        return self._target_person_id
+
     def update(
-        self, tracked_people: Sequence[TrackedPerson], frame_width: int, frame_height: int
+        self,
+        tracked_people: Sequence[TrackedPerson],
+        frame_width: int,
+        frame_height: int,
+        image: np.ndarray | None = None,
     ) -> SystemStatus:
         """Advance the whole control pipeline by one frame and return the
         coordinated decision. `tracked_people` is this frame's confirmed
-        tracks from the (upstream) detector + tracker."""
+        tracks from the (upstream) detector + tracker. `image` is the frame
+        pixels, needed only in identity mode (select_person) so the identity
+        tracker can match faces; pass it whenever identity mode may be active."""
         now = self._clock()
         self._predictor.update(tracked_people)
+
+        # Identity mode: resolve the target *person* to whichever live track is
+        # confirmed (by face) to be them, and point the selector at it. This is
+        # the identity-gated lock/reacquire -- it re-locks a returning target by
+        # face across track-id changes, and the geometric reacquire below is
+        # disabled so a nearby stranger is never grabbed.
+        identity_mode = self._identity is not None and self._target_person_id is not None
+        if identity_mode and image is not None:
+            assert self._identity is not None and self._target_person_id is not None
+            self._identity.update(image, tracked_people)
+            resolved_track = self._identity.resolve_person(self._target_person_id)
+            if resolved_track is not None:
+                self._selector.select(resolved_track)
 
         target_id = self._selector.target_id
         target_status = self._selector.status(tracked_people, frame_width, frame_height)
@@ -228,9 +277,11 @@ class TrackingStateMachine:
                 None,
             )
 
-        if recovery_status.reacquire_track_id is not None:
-            # Identity-FREE re-lock -- Stage 2 inserts identity verification
-            # here (a VERIFYING_IDENTITY state) before committing.
+        if recovery_status.reacquire_track_id is not None and not identity_mode:
+            # Geometric (identity-FREE) re-lock -- Stage 1 behavior, used only
+            # when NOT tracking a registered person. In identity mode the
+            # re-lock is handled by face resolution at the top of update(), so
+            # this is suppressed to avoid grabbing a merely-nearby stranger.
             self._selector.select(recovery_status.reacquire_track_id)
             self._lost_since = None
             relocked = self._selector.status(tracked_people, frame_width, frame_height)

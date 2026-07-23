@@ -44,6 +44,9 @@ def test_load_config_reads_yaml_defaults() -> None:
     assert config.registration.samples_required == 5
     assert config.registration.consent_version == "v1"
     assert config.registration.min_face_fraction == 0.02
+    assert config.identity_tracking.update_every_n_frames == 10
+    assert config.identity_tracking.history_window == 5
+    assert config.identity_tracking.min_confidence == 0.6
 
 
 def test_load_config_is_cached() -> None:

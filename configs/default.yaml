@@ -227,6 +227,20 @@ registration:
   max_brightness: 210.0
   min_face_fraction: 0.02   # face box must be >= this fraction of the frame area
 
+identity_tracking:
+  # Per-track identity fusion (Stage 2.4). Face recognition is expensive, so it
+  # runs every N frames (tracking runs every frame); between runs each track
+  # keeps its last identity. 10 frames ~= 0.3s at 30fps.
+  update_every_n_frames: 10
+  # Recent identity refreshes remembered per track; the consensus over this
+  # window is the track's identity, so one bad frame can't flip it.
+  history_window: 5
+  # Fraction of the window that must agree on a person to CONFIRM a track as
+  # that person. This gate is what makes reacquisition identity-based: a
+  # returning track is only re-locked once its face confirms the person, not
+  # because it merely appeared where the target was predicted to be.
+  min_confidence: 0.6
+
 # Sections for drone_control, etc. are added as each module is implemented,
 # not stubbed out empty here ahead of time — an unused config field is a
 # bug waiting to hide a typo.

@@ -262,10 +262,29 @@ decisions (2026-07-22): encryption keyed by an **operator passphrase**
      person correctly returns UNKNOWN. 185 tests total. The **`reid`** (OSNet
      body-appearance) slice is still to come -- it extends the same
      match-against-store pattern for when the face isn't visible.
-2.4. `identity` fusion module: combines face-match, reid-match, and temporal
-     consistency into the confidence score consumed by the state machine.
-     Replace Stage 1's placeholder reacquisition logic with real
-     identity-gated reacquisition.
+2.4. **DONE (Re-ID contribution pending its slice).** `identity` fusion:
+     `IdentityTracker` assigns registered-person identities to live tracks by
+     (a) periodically running the face embedder (every
+     `identity_tracking.update_every_n_frames` -- the model is too slow for
+     every frame), (b) associating each detected face with the track whose box
+     contains it, (c) matching via FaceMatcher, and (d) taking a temporal
+     consensus over a rolling window per track -- a track is only *confirmed*
+     as a person when a super-majority agrees, so one bad frame can't flip it.
+     Wired into the state machine: `select_person(person_id)` follows a
+     registered person; each frame the state machine resolves that person to
+     whichever live track is face-confirmed to be them and points the selector
+     there. This **replaces the Stage 1 geometric reacquisition with
+     identity-gated reacquisition** -- a returning target is re-locked by FACE
+     across track-id changes, and the old "nearest new track near the
+     prediction" grab is *suppressed* in identity mode so a bystander is never
+     locked onto. Kept the optional identity stack out of the core state
+     machine's import path (TYPE_CHECKING only), so Stage 1 still runs without
+     the Stage 2 deps (verified). `scripts/preview_identity_tracking.py` is the
+     capstone: pick a registered person, and the full pipeline follows only
+     them, reacquiring by face. 11 new tests (IdentityTracker fusion logic with
+     fakes; state-machine identity mode incl. reacquire-across-id-change and
+     geometric-reacquire-suppressed). 196 tests total. Still to add: the
+     **`reid`** (OSNet body) contribution for when the face isn't visible.
 2.5. Test harness: known-target vs. unregistered-person vs. wrong-registered-user
      scenarios, measuring FAR/FRR on your own captured data.
 

@@ -324,10 +324,16 @@ the nearest returning track, not a verified person).
   by cosine similarity, with an explicit `UNKNOWN` for everyone else. See it
   live: `.venv\Scripts\python.exe scripts\preview_face_match.py` labels each
   webcam face with the matched name (green) or UNKNOWN (red).
+- **2.4 (done):** identity fusion -- `IdentityTracker` assigns registered
+  identities to live tracks (face match + temporal consensus), and the state
+  machine's `select_person()` follows a specific registered person, reacquiring
+  them **by face** across track-id changes (the real fix for "leaves and comes
+  back as a new ID") while refusing to lock onto anyone else. Capstone demo:
+  `.venv\Scripts\python.exe scripts\preview_identity_tracking.py` -- pick a
+  registered person and the whole pipeline follows only them.
 
 Needs the Stage 2 deps:
 `.venv\Scripts\python.exe -m pip install -r requirements-identity.txt` (the
-face model auto-downloads ~280 MB on first use). Next is identity fusion into
-the state machine (2.4) -- replacing the Stage 1 placeholder reacquisition with
-real identity-gated reacquisition -- plus the body Re-ID slice. See
-`docs/04_roadmap.md` and `docs/database_design.md`.
+face model auto-downloads ~280 MB on first use). Still to come: the body Re-ID
+slice (recognize the target when their face is turned away) and the Stage 2.5
+test harness (FAR/FRR tuning). See `docs/04_roadmap.md`.

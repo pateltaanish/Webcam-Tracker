@@ -8,6 +8,7 @@ clock, so a whole scenario (track -> occlude -> search -> give up, or
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from webcam_tracker.gimbal_control import AxisController, GimbalController
@@ -18,6 +19,8 @@ from webcam_tracker.target_selection import TargetSelector
 from webcam_tracker.tracking import TrackedPerson
 
 from ._fake_clock import FakeClock
+
+_IMAGE = np.zeros((100, 100, 3), dtype=np.uint8)
 
 _W = 100
 _H = 100
@@ -49,6 +52,7 @@ def _make(
     occlusion_timeout: float = 1.0,
     give_up: float = 5.0,
     gimbal_max_velocity: float = _BIG,
+    identity: object | None = None,
 ) -> TrackingStateMachine:
     return TrackingStateMachine(
         selector=TargetSelector(),
@@ -58,8 +62,24 @@ def _make(
             pan=_axis(clock, gimbal_max_velocity), tilt=_axis(clock, gimbal_max_velocity)
         ),
         occlusion_timeout_seconds=occlusion_timeout,
+        identity=identity,  # type: ignore[arg-type]  # tests pass a duck-typed fake
         clock=clock,
     )
+
+
+class _FakeIdentity:
+    """Duck-typed stand-in for IdentityTracker. `resolution` maps person_id ->
+    the track_id that should currently be resolved (or None)."""
+
+    def __init__(self) -> None:
+        self.resolution: dict[str, int | None] = {}
+        self.update_calls = 0
+
+    def update(self, image: object, tracked_people: object) -> None:
+        self.update_calls += 1
+
+    def resolve_person(self, person_id: str) -> int | None:
+        return self.resolution.get(person_id)
 
 
 class TestTrackingStateMachine:
@@ -190,3 +210,67 @@ class TestTrackingStateMachine:
         clock.advance(0.1)
         second = sm.update([_person(1, 50, 50)], _W, _H)  # still TRACKING
         assert second.time_in_state_s == pytest.approx(0.1)
+
+
+class TestIdentityMode:
+    def test_select_person_without_identity_raises(self) -> None:
+        sm = _make(FakeClock())  # no identity tracker
+        with pytest.raises(RuntimeError):
+            sm.select_person("alice")
+
+    def test_locks_onto_identity_resolved_track(self) -> None:
+        clock = FakeClock()
+        identity = _FakeIdentity()
+        identity.resolution["alice"] = 5
+        sm = _make(clock, identity=identity)
+        sm.select_person("alice")
+
+        clock.advance(0.1)
+        status = sm.update([_person(5, 50, 50)], _W, _H, image=_IMAGE)
+        assert status.state is TrackingState.TRACKING
+        assert sm.selector.target_id == 5
+        assert identity.update_calls == 1
+
+    def test_reacquires_person_across_track_id_change(self) -> None:
+        clock = FakeClock()
+        identity = _FakeIdentity()
+        identity.resolution["alice"] = 1
+        sm = _make(clock, identity=identity)
+        sm.select_person("alice")
+
+        clock.advance(0.1)
+        assert sm.update([_person(1, 50, 50)], _W, _H, image=_IMAGE).state is TrackingState.TRACKING
+        assert sm.selector.target_id == 1
+
+        # Person leaves and returns as a brand-new track id; identity resolves
+        # them to it -> re-lock by face, no geometry involved.
+        identity.resolution["alice"] = 9
+        clock.advance(0.1)
+        status = sm.update([_person(9, 60, 50)], _W, _H, image=_IMAGE)
+        assert status.state is TrackingState.TRACKING
+        assert sm.selector.target_id == 9
+
+    def test_geometric_reacquire_suppressed_in_identity_mode(self) -> None:
+        clock = FakeClock()
+        identity = _FakeIdentity()
+        identity.resolution["alice"] = 1
+        sm = _make(clock, occlusion_timeout=1.0, identity=identity)
+        sm.select_person("alice")
+
+        clock.advance(0.1)
+        sm.update([_person(1, 50, 50)], _W, _H, image=_IMAGE)  # TRACKING id 1
+
+        # Alice can no longer be identified; her track is gone.
+        identity.resolution["alice"] = None
+        clock.advance(0.1)
+        sm.update([], _W, _H, image=_IMAGE)  # TEMPORARILY_OCCLUDED
+        clock.advance(1.2)
+        sm.update([], _W, _H, image=_IMAGE)  # RECOVERY_SEARCH
+
+        # A DIFFERENT person appears right where Alice was predicted. In Stage 1
+        # (geometric) this would be grabbed; in identity mode it must NOT be.
+        clock.advance(0.1)
+        status = sm.update([_person(2, 52, 50)], _W, _H, image=_IMAGE)
+        assert status.reacquired_track_id is None
+        assert sm.selector.target_id == 1  # still the (absent) original, never 2
+        assert status.state is not TrackingState.TRACKING

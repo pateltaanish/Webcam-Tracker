@@ -306,6 +306,35 @@ class RegistrationConfig(BaseModel):
     )
 
 
+class IdentityTrackingConfig(BaseModel):
+    """Per-track identity fusion settings (Stage 2.4). Consumed by the identity
+    module, which assigns registered-person identities to live tracks using
+    face matches + temporal consistency.
+
+    Running the face model every frame is too slow, so identity is refreshed
+    periodically; between refreshes each track keeps its last identity.
+    """
+
+    update_every_n_frames: int = Field(
+        gt=0,
+        description="Run the face model + matching once every N frames (tracking still "
+        "runs every frame). Higher = cheaper but slower to confirm/switch identity.",
+    )
+    history_window: int = Field(
+        gt=0,
+        description="How many recent identity refreshes to remember per track. The "
+        "consensus over this window is the track's identity (filters single-frame "
+        "mismatches).",
+    )
+    min_confidence: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Fraction of the history window that must agree on a person before a "
+        "track is confirmed as that person (else the track is unconfirmed/unknown). This "
+        "is what makes reacquisition identity-GATED, not geometric.",
+    )
+
+
 class AppConfig(BaseSettings):
     """Root application config, assembled from YAML defaults + env overrides."""
 
@@ -329,6 +358,7 @@ class AppConfig(BaseSettings):
     identity: IdentityConfig
     face: FaceConfig
     registration: RegistrationConfig
+    identity_tracking: IdentityTrackingConfig
 
     @classmethod
     def settings_customise_sources(
