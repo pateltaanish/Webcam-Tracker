@@ -33,3 +33,8 @@ explicit_package_bases = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 disallow_untyped_defs = true
+
+# InsightFace (face model, Stage 2) ships no type stubs.
+[[tool.mypy.overrides]]
+module = ["insightface.*"]
+ignore_missing_imports = true

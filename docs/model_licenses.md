@@ -30,11 +30,21 @@ allowed) but requires preserving copyright/license notices and stating
 changes if you redistribute modified source -- less restrictive than
 YOLO11n's AGPL-3.0 above, no action needed for current personal/research use.
 
+## InsightFace SCRFD + ArcFace (face detection + embedding) -- Stage 2.2
+
+| | |
+|---|---|
+| Source | `insightface` PyPI package, version `1.0.1` |
+| Weights | `buffalo_l` model pack, auto-downloaded on first use to `~/.insightface/models/buffalo_l/` (outside the repo, not committed). We load only `det_10g.onnx` (SCRFD detection) and `w600k_r50.onnx` (ArcFace recognition, 512-d embeddings) via `allowed_modules=['detection','recognition']` -- the pack's gender/age model is deliberately NOT loaded. |
+| Code license | **MIT** (the `insightface` library code) |
+| **Model license** | **Non-commercial / research use only.** The InsightFace pretrained packs (incl. `buffalo_l`) are released for non-commercial research purposes. This is a stricter restriction than the MIT code license and applies to the *weights*, not the code. |
+| Commercial-use note | **Current status: personal/research development -- within the non-commercial terms.** Before any commercial use, sale, or distribution, the face model must be revisited: either license commercial weights, or retrain/substitute a permissively-licensed face-recognition model. Same class of caveat as YOLO11n's AGPL above. |
+| Runtime | `onnxruntime` (CPU build pinned; `onnxruntime-gpu` optional for GPU inference) |
+| Where used | `src/webcam_tracker/face_recognition/embedder.py` (`FaceEmbedder`) |
+
 ## Not yet added
 
-Face detection/embedding (SCRFD + ArcFace) and person re-identification
-(OSNet) are planned for Stage 2 -- see docs/02_architecture.md sec 3.3-3.4
-for the comparison, and this file will get an entry for each once their
-exact weight files are pinned (some InsightFace pretrained checkpoints carry
-non-commercial research restrictions that must be checked per-file before
-use, not assumed from the code license alone).
+Person re-identification (OSNet) is planned for the later Stage 2 Re-ID slice
+-- see docs/02_architecture.md sec 3.4 -- and will get an entry here once its
+exact weight file is pinned (check its per-file license before use, as with
+the InsightFace weights above).

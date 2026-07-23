@@ -5,13 +5,20 @@
 # Install with:
 #   .venv\Scripts\python.exe -m pip install -r requirements-identity.txt
 #
-# Stage 2.1 (encrypted database) needs only the two crypto libraries below.
-# The InsightFace face-model stack (insightface, onnxruntime-gpu) is added
-# here when Stage 2.3 (face_recognition) lands -- see docs/database_design.md
-# sec 9. Deferring it avoids a large, install-fiddly download before it's used.
-
 # AES-256-GCM authenticated encryption for embeddings + profile fields.
 cryptography==49.0.0
 
 # Argon2id password-based key derivation (operator passphrase -> key).
 argon2-cffi==25.1.0
+
+# Face model (Stage 2.2+): SCRFD detection + ArcFace embeddings (buffalo_l pack,
+# auto-downloaded to ~/.insightface on first use). InsightFace CODE is MIT but
+# the pretrained buffalo_l MODELS are non-commercial/research use only -- see
+# docs/model_licenses.md.
+insightface==1.0.1
+
+# ONNX runtime for the face model. This is the CPU build -- fine for the
+# one-time registration flow. For GPU inference in the live loop, swap for
+# `onnxruntime-gpu` (must match the installed CUDA/cuDNN, same care as the
+# torch CUDA wheels in requirements-ml.txt) and set face.device: "cuda".
+onnxruntime==1.27.0

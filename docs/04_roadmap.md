@@ -228,9 +228,26 @@ decisions (2026-07-22): encryption keyed by an **operator passphrase**
      fails-closed, plaintext-name/embedding-bytes-absent-from-the-file
      (encrypted at rest), delete-really-removes-data, passphrase rotation.
      Store lives at `data/identity/` (gitignored). No face model yet (2.3).
-2.2. Registration CLI/flow: capture samples, quality checks (blur/exposure/
-     single-face), multi-angle prompts, embedding generation (face via
-     SCRFD+ArcFace, optional Re-ID via OSNet), storage.
+2.2. **DONE.** Registration flow + the face embedder it needs.
+     `face_recognition` module: `FaceEmbedder` wraps InsightFace (SCRFD +
+     ArcFace, `buffalo_l`) → 512-d L2-normalized embeddings + `DetectedFace`;
+     loads only detection+recognition sub-models (the pack's gender/age model
+     is deliberately NOT loaded). `registration` module: pure-logic quality
+     gates (`assess_face_quality` — detector-confidence / blur (variance-of-
+     Laplacian) / brightness / face-size, all unit-tested with synthetic
+     images) + `Registrar` (single-person enforcement, then embed + store with
+     a consent record). `scripts/register_person.py` is the interactive,
+     consent-first CLI (operator passphrase → unlock/create store → name →
+     explicit consent → webcam capture with live quality feedback → enroll).
+     Stores embeddings only, never raw face images. Installed insightface +
+     onnxruntime (CPU) — clean prebuilt wheels on Windows, no build pain — and
+     recorded the buffalo_l NON-COMMERCIAL model license in
+     docs/model_licenses.md. 16 new tests (12 unit quality/registrar + 4
+     integration with the real model): verified end-to-end on a bundled face
+     image — detect → quality-gate → enroll → read back, with the embedding
+     bit-exact through the encrypt→disk→decrypt round trip. 178 tests total.
+     (Matching against the store — turning an embedding into "who is this?" —
+     is 2.3.)
 2.3. `face_recognition` + `reid` modules: embedding extraction + cosine-similarity
      comparison against stored profiles, with confidence thresholds and an
      explicit "unknown" outcome.

@@ -251,6 +251,53 @@ class IdentityConfig(BaseModel):
     )
 
 
+class FaceConfig(BaseModel):
+    """Face detection + embedding model settings (Stage 2.2). Consumed by the
+    face_recognition module. See docs/model_licenses.md for the InsightFace
+    buffalo_l non-commercial license caveat."""
+
+    model_pack: str = Field(
+        description="InsightFace model pack name, e.g. 'buffalo_l' (SCRFD + ArcFace)."
+    )
+    det_size: int = Field(gt=0, description="Square detector input size in pixels (e.g. 640).")
+    device: str = Field(
+        description="'cpu' (onnxruntime) or 'cuda' (needs onnxruntime-gpu + matching CUDA)."
+    )
+
+
+class RegistrationConfig(BaseModel):
+    """Registration / enrollment settings (Stage 2.2). Consumed by the
+    registration module: how many samples to require and the quality gates a
+    captured face must pass before it's embedded and stored."""
+
+    consent_version: str = Field(
+        description="Consent-terms version recorded with each enrollment (bump if terms change)."
+    )
+    samples_required: int = Field(
+        gt=0, description="Number of quality-passing face samples needed to enroll a person."
+    )
+    min_detection_score: float = Field(
+        gt=0.0, le=1.0, description="Minimum face detector confidence to accept a sample."
+    )
+    min_blur_variance: float = Field(
+        gt=0.0,
+        description="Minimum variance-of-Laplacian on the face crop (sharpness gate); "
+        "below this the face is too blurry. Resolution-dependent -- tune per camera.",
+    )
+    min_brightness: float = Field(
+        ge=0.0, le=255.0, description="Minimum mean face-crop brightness (rejects too-dark)."
+    )
+    max_brightness: float = Field(
+        ge=0.0, le=255.0, description="Maximum mean face-crop brightness (rejects blown-out)."
+    )
+    min_face_fraction: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Minimum face-box area as a fraction of the frame (person must be "
+        "close enough for a reliable embedding).",
+    )
+
+
 class AppConfig(BaseSettings):
     """Root application config, assembled from YAML defaults + env overrides."""
 
@@ -272,6 +319,8 @@ class AppConfig(BaseSettings):
     recovery: RecoveryConfig
     state_machine: StateMachineConfig
     identity: IdentityConfig
+    face: FaceConfig
+    registration: RegistrationConfig
 
     @classmethod
     def settings_customise_sources(

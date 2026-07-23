@@ -197,6 +197,31 @@ identity:
   # can't rescue a trivially guessable passphrase -- see threat model sec 2).
   min_passphrase_length: 12
 
+face:
+  # InsightFace model pack (SCRFD detector + ArcFace embedder). buffalo_l is
+  # the accurate general pack. Auto-downloads to ~/.insightface on first use.
+  # NON-COMMERCIAL model license -- see docs/model_licenses.md.
+  model_pack: "buffalo_l"
+  det_size: 640
+  # "cpu" is fine for the one-time registration flow. Switch to "cuda" (needs
+  # onnxruntime-gpu) for GPU inference in the live identity loop later.
+  device: "cpu"
+
+registration:
+  # Bump when the consent terms shown at enrollment change; stored per person.
+  consent_version: "v1"
+  # Distinct quality-passing samples (ideally different angles) needed to enroll.
+  samples_required: 5
+  # Reject a captured face below these gates (see registration/quality.py). The
+  # blur/brightness thresholds are resolution/camera-dependent starting points
+  # -- tune against the live preview if good captures get rejected (or bad ones
+  # accepted).
+  min_detection_score: 0.6
+  min_blur_variance: 40.0   # variance-of-Laplacian on the face crop; higher = sharper
+  min_brightness: 50.0      # mean face-crop brightness, 0-255
+  max_brightness: 210.0
+  min_face_fraction: 0.02   # face box must be >= this fraction of the frame area
+
 # Sections for drone_control, etc. are added as each module is implemented,
 # not stubbed out empty here ahead of time — an unused config field is a
 # bug waiting to hide a typo.
