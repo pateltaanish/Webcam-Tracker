@@ -1,7 +1,9 @@
 # Webcam-Tracker
 
 Consent-based person-identification and tracking system, being built toward
-a <=250 g drone. **Stage 1 (current): desktop tracking prototype.**
+a <=250 g drone. **Current stage: Stage 2 -- registration & identity** (Stage 1
+desktop tracking prototype is complete). Full staged roadmap with what's done
+and what's next is at the bottom of this README.
 
 This project only identifies people who have knowingly registered and
 consented. It is not designed for surveillance or identifying strangers. See
@@ -391,55 +393,61 @@ The Stage 1 exit check, in two parts:
   .venv\Scripts\python.exe scripts\integration_report.py data\clips\cross.mp4
   ```
 
-## Status
+## Project roadmap & status
 
-**Stage 1 is complete** (repo scaffold 1.1 through the integration pass 1.10)
--- the full desktop tracking prototype is built, unit- and integration-tested,
-and verified against real webcam data on the desktop USB webcam (GPU: RTX
-3060, CUDA confirmed available): track IDs stable, target selection solid,
-gimbal rate-limiting + saturation correct, the state machine steps
-IDLE -> TRACKING -> (on loss) TEMPORARILY_OCCLUDED -> RECOVERY_SEARCH ->
-SAFE_HOVER_REQUESTED with timing matching config, and the full pipeline
-reacquires a person who returns as a new track ID. 149 tests (145 unit + 4
-full-pipeline integration), ruff + mypy clean. Not yet verified against a
-laptop's built-in webcam -- run `scripts\list_cameras.py` there first.
-Everything through Stage 1 is identity-FREE by design (reacquisition re-locks
-the nearest returning track, not a verified person).
+The project is built in checkpointed stages -- each ends with something runnable
+and verified before the next begins. Full per-checkpoint detail is in
+[`docs/04_roadmap.md`](docs/04_roadmap.md); this is the at-a-glance status.
+`[x]` = done, `[ ]` = not started.
 
-**Stage 2 (registration & identity) is underway.**
+**Currently on:** Stage 2 (registration & identity). Registration, login, and
+live identity tracking all work end to end via `scripts\app.py`. What's left in
+Stage 2: body Re-ID and the accuracy test harness (see below).
 
-- **2.1 (done):** the `database` module -- a local, encrypted
-  (`data/identity/`, gitignored) profile store for registered people + their
-  embeddings + consent metadata, keyed by an operator passphrase (Argon2id ->
-  AES-256-GCM envelope encryption; passphrase never stored, unlock fails
-  closed).
-- **2.2 (done):** the `face_recognition` embedder (InsightFace SCRFD + ArcFace
-  512-d embeddings) and the `registration` flow (quality gates + consent-first
-  enrollment). Enroll a consenting person from the webcam with
-  `.venv\Scripts\python.exe scripts\register_person.py` -- it stores face
-  *embeddings* only, never images. (First-run passphrase must be >=12 chars,
-  and the name/consent prompts are in the terminal before the camera opens.)
-- **2.3 (done):** face *matching* -- `FaceMatcher` recognizes enrolled people
-  by cosine similarity, with an explicit `UNKNOWN` for everyone else. See it
-  live: `.venv\Scripts\python.exe scripts\preview_face_match.py` labels each
-  webcam face with the matched name (green) or UNKNOWN (red).
-- **2.4 (done):** identity fusion -- `IdentityTracker` assigns registered
-  identities to live tracks (face match + temporal consensus), and the state
-  machine's `select_person()` follows a specific registered person, reacquiring
-  them **by face** across track-id changes (the real fix for "leaves and comes
-  back as a new ID") while refusing to lock onto anyone else. Capstone demo:
-  `.venv\Scripts\python.exe scripts\preview_identity_tracking.py` -- pick a
-  registered person and the whole pipeline follows only them.
-- **Multi-user login + unified app (done):** `scripts\app.py` is now the single
-  entry point -- it makes you **log in or enroll** before tracking, with two
-  selectable store modes (**shared key** = one passphrase, track anyone;
-  **per user** = own passphrase, track only yourself). Unique usernames, a
-  forgot-passphrase reset (per-user mode), and per-user encrypted data are layered
-  on the `database` module (`accounts.json` alongside `profiles.db`). Full
-  step-by-step runbook in the **"Running the app"** section near the top.
+### Stage 1 -- Desktop tracking prototype (identity-free) -- COMPLETE
 
-Needs the Stage 2 deps:
-`.venv\Scripts\python.exe -m pip install -r requirements-identity.txt` (the
-face model auto-downloads ~280 MB on first use). Still to come: the body Re-ID
-slice (recognize the target when their face is turned away) and the Stage 2.5
-test harness (FAR/FRR tuning). See `docs/04_roadmap.md`.
+The full pipeline: built, unit- + integration-tested, and verified live on the
+desktop USB webcam (RTX 3060, CUDA). Identity-FREE by design -- "which specific
+person is this" is Stage 2. (Not yet verified on a laptop's built-in webcam --
+run `scripts\list_cameras.py` there first.)
+
+- [x] 1.1 Repo scaffold, virtualenv, config system, structured logging
+- [x] 1.2 `video_input` -- webcam / file / folder sources (`"auto"` camera discovery)
+- [x] 1.3 `detection` -- YOLO11n person detector
+- [x] 1.4 `tracking` -- ByteTrack persistent track IDs
+- [x] 1.5 `visualization` + `perf_monitor` -- on-screen overlays, FPS/latency
+- [x] 1.6 `target_selection` -- pick a target, pixel error vs. frame center
+- [x] 1.7 `gimbal_control` -- simulated pan/tilt PID (no real motors)
+- [x] 1.8 `motion_prediction` + `recovery` -- Kalman filter + loss/search/reacquire
+- [x] 1.9 `state_machine` -- one authoritative state + output set per frame
+- [x] 1.10 Integration pass -- whole-pipeline tests + a real-clip report tool
+
+### Stage 2 -- Registration & identity -- IN PROGRESS
+
+Recognize and follow a *specific consenting person*. Local encrypted store; face
+*embeddings* only, never raw images. Needs the identity deps:
+`.venv\Scripts\python.exe -m pip install -r requirements-identity.txt` (face
+model auto-downloads ~280 MB on first use).
+
+- [x] 2.1 `database` -- encrypted profile store (Argon2id -> AES-256-GCM; key never stored)
+- [x] 2.2 `face_recognition` embedder + consent-first `registration` flow
+- [x] 2.3 `FaceMatcher` -- recognize enrolled people, explicit UNKNOWN for strangers
+- [x] 2.4 `identity` fusion -- follow a registered person, reacquire by FACE across ID changes
+- [x] 2.5 Multi-user login + unified `app.py` -- log-in/enroll gate; shared-key vs per-user modes
+- [ ] Body Re-ID (OSNet) -- recognize the target when their face is turned away
+- [ ] 2.6 Accuracy test harness -- FAR/FRR on your own captured data (tune the match threshold)
+
+### Stage 3 -- Embedded migration -- PLANNED
+
+Move onto the drone's onboard computer (see
+[`docs/03_onboard_computer.md`](docs/03_onboard_computer.md)).
+
+- [ ] 3.1 Finalize onboard computer purchase
+- [ ] 3.2 Model conversion / quantization (TensorRT or HailoRT), benchmarked vs. desktop
+- [ ] 3.3 Camera / gimbal / flight-controller hardware-abstraction layer
+- [ ] 3.4 Startup service, watchdog, thermal/power monitoring, safe shutdown
+- [ ] 3.5 On-hardware benchmark against the acceptance criteria
+
+Drone motor control stays a request-only interface behind safety gates through
+every stage -- no raw motor access is wired up in this project's software; that
+requires your own hardware-in-the-loop testing and sign-off.
