@@ -143,20 +143,38 @@ On a fresh machine there are no users yet, so you go straight to enrollment:
    (you type the username to confirm). Shared-key mode can't reset per user --
    the passphrase belongs to everyone.
 
-### 5. After login -- the tracking menu
+### 5. After login -- pick the session scope
 
-- **[1] Preview tracking** -- opens the live tracking window. In *per-user* mode
-  it follows you automatically; in *shared* mode it lists everyone enrolled and
-  you pick who to follow. In-window keys: `e` emergency-stop, `r` resume,
-  `q`/`Esc` to return to the menu. (This is the full pipeline from
+On a **shared-key** store, each login asks how *that session* should behave:
+
+```
+  [1] Shared    -- see everyone enrolled and pick who to track.
+  [2] Personal  -- restrict this session to your own data; the tracker follows only YOU.
+```
+
+This is asked **every login** and is not permanent -- pick differently next
+time. Blank logs you back out. A **per-user** login skips the question: its key
+can only decrypt its own data, so a shared session is impossible, not just
+disallowed.
+
+Personal is a *convenience* scope, not a security boundary. On a shared store
+the key still decrypts everything, so choosing personal is a self-imposed
+restriction. Use per-user mode if you need real isolation between people.
+
+### 6. The tracking menu
+
+- **[1] Preview tracking** -- opens the live tracking window. In a *personal*
+  session it follows you automatically; in a *shared* session it lists everyone
+  enrolled and you pick who to follow. In-window keys: `e` emergency-stop, `r`
+  resume, `q`/`Esc` to return to the menu. (This is the full pipeline from
   `preview_identity_tracking.py` -- state banner, gimbal widget, recovery,
   perf overlay, identity labels.)
 - **[2] Change my passphrase** -- in shared mode this changes the key for
-  *everyone*.
-- **[3] List registered people** -- shared mode only.
+  *everyone* (keyed to the store's mode, not the session scope).
+- **[3] List registered people** -- shared sessions only.
 - **[l] Log out** (back to the login screen) / **[q] Quit**.
 
-### 6. Adding more people later
+### 7. Adding more people later
 
 Launch again and choose **[2] Enroll as new user**. In *per-user* mode anyone
 can enroll a fresh account with their own passphrase. In *shared* mode, joining

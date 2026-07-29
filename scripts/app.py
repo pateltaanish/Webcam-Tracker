@@ -20,8 +20,15 @@ store commits to one or the other):
                     enroll a fresh account, and if you forget your passphrase you
                     can delete just your account and enroll again.
 
-After login you get the tracking menu (preview tracking, change passphrase,
-log out, quit). Tracking/targeting/gimbal/recovery are unchanged from before.
+After login, a SHARED-key store additionally asks how *this session* should be
+scoped -- shared (see everyone, pick a target) or personal (restrict the session
+to your own data, tracker follows only you). That choice is per login, not
+permanent, and is a convenience scope rather than a security boundary: the
+shared DEK still decrypts everything. A per_user login is always personal --
+its DEK cannot decrypt anyone else's rows, so there is nothing to choose.
+
+Then you get the tracking menu (preview tracking, change passphrase, log out,
+quit). Tracking/targeting/gimbal/recovery are unchanged from before.
 
 Run from the repo root:
     .venv\\Scripts\\python.exe scripts\\app.py
@@ -409,24 +416,30 @@ def _session_menu(
 ) -> bool:
     """Menu shown after login. Returns True if the user chose to quit the whole
     app, False to log out (back to the auth phase)."""
+    personal = _choose_session_scope(login)
+    if personal is None:
+        return False  # cancelled at the scope prompt -- back to the auth phase
     store = create_profile_store(config)
-    store.attach(login.dek, login.scope_person_id)
-    shared = login.mode == MODE_SHARED
+    # A personal session pins the store to this one person even on a shared-key
+    # store, so listing, matching and targeting can't see anyone else. Every
+    # restriction downstream follows from this one scope.
+    store.attach(login.dek, login.user_id if personal else None)
     try:
         while True:
-            print(f"\n----- {login.display_name} ({'shared' if shared else 'per-user'} mode) -----")
+            label = "personal" if personal else "shared"
+            print(f"\n----- {login.display_name} ({label} session) -----")
             print("  [1] Preview tracking")
             print("  [2] Change my passphrase")
-            if shared:
+            if not personal:
                 print("  [3] List registered people")
             print("  [l] Log out")
             print("  [q] Quit")
             choice = input("Choose: ").strip().lower()
             if choice == "1":
-                _tracking_flow(config, store, login, embedders)
+                _tracking_flow(config, store, login, embedders, personal)
             elif choice == "2":
                 _change_passphrase_flow(config, accounts, login)
-            elif choice == "3" and shared:
+            elif choice == "3" and not personal:
                 _list_flow(store)
             elif choice == "l":
                 return False
@@ -436,6 +449,38 @@ def _session_menu(
                 print("Not a valid choice.")
     finally:
         store.close()
+
+
+def _choose_session_scope(login: Login) -> bool | None:
+    """Ask, once per login, whether this session sees everyone or only the
+    logged-in user. Returns True for personal, False for shared, None to cancel
+    (which drops back to the auth phase).
+
+    Only a shared-key store gets the choice. A per_user login's DEK can only
+    decrypt that user's own rows, so "shared" isn't merely disallowed there --
+    there would be nothing to decrypt -- and it is forced personal.
+
+    Note this is a convenience scope, NOT a security boundary: on a shared store
+    the DEK still decrypts everything, so a personal session is a self-imposed
+    restriction that the same login can drop by choosing shared next time."""
+    if login.mode != MODE_SHARED:
+        print("\nThis store is PER USER -- this session can only ever see your own data.")
+        return True
+    print(
+        f"\nHow should this session work, {login.display_name}?\n"
+        "  [1] Shared    -- see everyone enrolled and pick who to track.\n"
+        "  [2] Personal  -- restrict this session to your own data; the tracker "
+        "follows only YOU."
+    )
+    while True:
+        choice = input("Session [1/2] (blank to log out): ").strip()
+        if choice == "":
+            return None
+        if choice == "1":
+            return False
+        if choice == "2":
+            return True
+        print("Enter 1, 2, or blank.")
 
 
 def _change_passphrase_flow(config: AppConfig, accounts: AccountManager, login: Login) -> None:
@@ -469,18 +514,20 @@ def _list_flow(store: ProfileStore) -> None:  # shared mode only
 
 
 def _tracking_flow(
-    config: AppConfig, store: ProfileStore, login: Login, embedders: EmbedderCache
+    config: AppConfig,
+    store: ProfileStore,
+    login: Login,
+    embedders: EmbedderCache,
+    personal: bool,
 ) -> None:
     people = store.list_people()
     if not people:
         print("No enrolled face data to track.")
         return
-    if login.mode == MODE_SHARED:
-        target = _choose_person(people)
-        if target is None:
-            return
-    else:
-        target = people[0]  # per_user: you can only be yourself
+    # Personal session: the store is scoped, so the only person listed is you.
+    target: Person | None = people[0] if personal else _choose_person(people)
+    if target is None:
+        return  # backed out of the person picker
 
     embedder = embedders.get()
     matcher = create_face_matcher(config, store)  # loads templates the DEK can see
