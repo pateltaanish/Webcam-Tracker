@@ -76,13 +76,17 @@ class Registrar:
         display_name: str,
         faces: Sequence[DetectedFace],
         consent_note: str = "",
+        person_id: str | None = None,
     ) -> Person:
         """Create a profile from accepted face samples. The store records the
         'granted' consent event and audit entries; this adds one more audit
-        line noting the registration and sample count."""
+        line noting the registration and sample count. `person_id` ties the
+        profile to a login account (Stage 2.5) when given."""
         if not faces:
             raise ValueError("cannot enroll with zero face samples")
-        person = self._store.add_person(display_name, self._consent_version, consent_note)
+        person = self._store.add_person(
+            display_name, self._consent_version, consent_note, person_id=person_id
+        )
         for face in faces:
             self._store.add_embedding(
                 person.id,

@@ -10,6 +10,16 @@ Entry point: `create_profile_store(config)` builds a locked ProfileStore;
 call `initialize(passphrase)` (first run) or `unlock(passphrase)` to use it.
 """
 
+from webcam_tracker.database.accounts import (
+    MODE_PER_USER,
+    MODE_SHARED,
+    AccountError,
+    AccountManager,
+    Login,
+    NameTakenError,
+    NoSuchAccountError,
+    StoreModeError,
+)
 from webcam_tracker.database.crypto import InvalidPassphraseError, KdfParams
 from webcam_tracker.database.errors import (
     DatabaseError,
@@ -19,11 +29,15 @@ from webcam_tracker.database.errors import (
     StoreNotInitializedError,
     WeakPassphraseError,
 )
-from webcam_tracker.database.factory import create_profile_store
+from webcam_tracker.database.factory import create_account_manager, create_profile_store
 from webcam_tracker.database.models import AuditEntry, ConsentEvent, Embedding, Person
 from webcam_tracker.database.store import ProfileStore
 
 __all__ = [
+    "MODE_PER_USER",
+    "MODE_SHARED",
+    "AccountError",
+    "AccountManager",
     "AuditEntry",
     "ConsentEvent",
     "DatabaseError",
@@ -31,11 +45,16 @@ __all__ = [
     "Embedding",
     "InvalidPassphraseError",
     "KdfParams",
+    "Login",
+    "NameTakenError",
+    "NoSuchAccountError",
     "Person",
     "PersonNotFoundError",
     "ProfileStore",
     "StoreAlreadyInitializedError",
+    "StoreModeError",
     "StoreNotInitializedError",
     "WeakPassphraseError",
+    "create_account_manager",
     "create_profile_store",
 ]

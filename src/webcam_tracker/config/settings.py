@@ -237,6 +237,12 @@ class IdentityConfig(BaseModel):
         description="Plaintext key-vault sidecar (salt + KDF params + wrapped data key) "
         "within store_dir. Safe to store in the clear; useless without the passphrase."
     )
+    accounts_filename: str = Field(
+        default="accounts.json",
+        description="Multi-user login file (Stage 2.5) within store_dir: mode, KDF "
+        "params, per-store name-hash salt, and wrapped data keys. Safe in the clear; "
+        "holds no passphrases or raw names.",
+    )
     argon2_time_cost: int = Field(
         gt=0, description="Argon2id iterations. Higher = slower unlock, harder brute force."
     )

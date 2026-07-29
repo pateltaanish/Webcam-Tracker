@@ -178,12 +178,15 @@ identity:
   # at runtime from the operator passphrase; only the store location and the
   # (non-secret) Argon2id cost parameters live here.
   #
-  # store_dir holds two files, BOTH gitignored (data/ is ignored):
+  # store_dir holds these files, ALL gitignored (data/ is ignored):
   #   profiles.db   -- SQLite store; sensitive columns encrypted (AES-256-GCM)
-  #   keyvault.json -- salt + KDF params + wrapped data key (safe in the clear)
+  #   keyvault.json -- legacy single-passphrase vault (scripts/register_person.py)
+  #   accounts.json -- multi-user login (Stage 2.5, scripts/app.py): mode, KDF
+  #                    params, name-hash salt, wrapped data keys (safe in clear)
   store_dir: "data/identity"
   db_filename: "profiles.db"
   keyvault_filename: "keyvault.json"
+  accounts_filename: "accounts.json"
   # Argon2id KDF cost. Tuned so an unlock takes ~0.5s on the RTX 3060 dev
   # machine (measured: time_cost=4 + 512 MiB -> 0.51s) -- deliberately slow to
   # blunt brute force, and memory-hard (512 MiB) to blunt GPU/ASIC attacks.

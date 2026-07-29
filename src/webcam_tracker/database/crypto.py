@@ -19,6 +19,7 @@ silently producing garbage -- that's also how a wrong passphrase is rejected
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -121,6 +122,53 @@ def rewrap_dek(dek: bytes, passphrase: str, params: KdfParams) -> dict[str, Any]
         "dek_nonce": _b64(nonce),
         "wrapped_dek": _b64(wrapped_dek),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Multi-account primitives (Stage 2.5): per-user login on top of the same
+# envelope scheme. A DEK can be wrapped under several passphrases (one small
+# "envelope" each), so different users unlock the same or their own data key.
+# --------------------------------------------------------------------------- #
+def new_dek() -> bytes:
+    """A fresh random 32-byte data-encryption key."""
+    return os.urandom(_KEY_BYTES)
+
+
+def wrap_dek(dek: bytes, passphrase: str, params: KdfParams) -> dict[str, str]:
+    """Wrap a DEK under one passphrase. Returns just the envelope fields
+    (salt/nonce/wrapped_dek, base64) -- no version/kdf metadata, which the
+    caller stores once at the account-file level."""
+    salt = os.urandom(_SALT_BYTES)
+    kek = _derive_kek(passphrase, salt, params)
+    nonce = os.urandom(_NONCE_BYTES)
+    wrapped = AESGCM(kek).encrypt(nonce, dek, None)
+    return {"salt": _b64(salt), "dek_nonce": _b64(nonce), "wrapped_dek": _b64(wrapped)}
+
+
+def unwrap_dek(envelope: dict[str, str], passphrase: str, params: KdfParams) -> bytes:
+    """Inverse of wrap_dek. Raises InvalidPassphraseError on a wrong passphrase
+    (or a tampered envelope)."""
+    kek = _derive_kek(passphrase, _unb64(envelope["salt"]), params)
+    try:
+        return AESGCM(kek).decrypt(
+            _unb64(envelope["dek_nonce"]), _unb64(envelope["wrapped_dek"]), None
+        )
+    except InvalidTag as exc:
+        raise InvalidPassphraseError("passphrase did not unlock this account") from exc
+
+
+def hash_name(name: str, name_salt: bytes) -> str:
+    """Deterministic, store-salted hash of a normalized (lowercased, trimmed)
+    name. Lets the account file check uniqueness and look up a login WITHOUT a
+    passphrase, while keeping the raw name off disk. Same name -> same hash
+    within one store (the salt is per-store), so it can act as a unique key."""
+    normalized = name.strip().casefold().encode("utf-8")
+    return hashlib.sha256(name_salt + normalized).hexdigest()
+
+
+def new_name_salt() -> str:
+    """A fresh per-store salt (base64) for hash_name."""
+    return _b64(os.urandom(_SALT_BYTES))
 
 
 def encrypt_field(dek: bytes, plaintext: bytes) -> bytes:

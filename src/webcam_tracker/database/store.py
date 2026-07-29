@@ -68,6 +68,10 @@ class ProfileStore:
         self._now = now
         self._conn: sqlite3.Connection | None = None
         self._dek: bytes | None = None
+        # Optional per-user scoping (Stage 2.5, per_user login mode): when set,
+        # people-listing is restricted to this one person_id, because in
+        # per_user mode the active DEK can only decrypt that user's own rows.
+        self._scope_person_id: str | None = None
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -104,11 +108,49 @@ class ProfileStore:
         self._conn = self._connect()
         logger.info("Identity store unlocked", extra={"path": str(self._db_path)})
 
+    def attach(self, dek: bytes, scope_person_id: str | None = None) -> None:
+        """Open the store with a DEK obtained EXTERNALLY (from the account
+        layer's login), instead of unlocking a single keyvault ourselves. Used
+        by the multi-user login system (Stage 2.5). Ensures the schema exists,
+        so this also serves as first-time setup for a fresh DB.
+
+        `scope_person_id` restricts people-listing to one person (per_user
+        mode, where the DEK only decrypts that user's own rows); None means
+        full access (shared mode)."""
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._dek = dek
+        self._scope_person_id = scope_person_id
+        self._conn = self._connect()
+        self._create_schema()
+        self._conn.commit()
+
     def close(self) -> None:
         if self._conn is not None:
             self._conn.close()
         self._conn = None
         self._dek = None
+        self._scope_person_id = None
+
+    def purge_person(self, person_id: str) -> None:
+        """Hard-delete a person's rows WITHOUT needing the DEK -- used by the
+        "forgot passphrase" path, where the account's key is gone for good so
+        its encrypted data can never be read again and is just dead weight.
+        Connects on its own if the store isn't attached. Keeps no consent trail
+        (there's no authenticated caller to attribute it to)."""
+        own_conn = self._conn is None
+        conn = self._connect() if own_conn else self._conn
+        assert conn is not None
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("DELETE FROM person WHERE id = ?", (person_id,))
+            conn.commit()
+            conn.execute("VACUUM")  # overwrite freed pages holding ciphertext
+        except sqlite3.OperationalError:
+            # No schema yet -> nothing was ever stored for this id; nothing to purge.
+            pass
+        finally:
+            if own_conn:
+                conn.close()
 
     def __enter__(self) -> ProfileStore:
         return self
@@ -128,10 +170,18 @@ class ProfileStore:
 
     # -------------------------------------------------------------------- people
 
-    def add_person(self, display_name: str, consent_version: str, consent_note: str = "") -> Person:
-        """Register a person, recording a 'granted' consent event."""
+    def add_person(
+        self,
+        display_name: str,
+        consent_version: str,
+        consent_note: str = "",
+        person_id: str | None = None,
+    ) -> Person:
+        """Register a person, recording a 'granted' consent event. `person_id`
+        may be supplied to tie the row to an external identity (the login
+        account's user_id, Stage 2.5); otherwise a random id is generated."""
         conn, dek = self._require_unlocked()
-        person_id = uuid.uuid4().hex
+        person_id = person_id or uuid.uuid4().hex
         created_at = self._now().isoformat()
         conn.execute(
             "INSERT INTO person (id, display_name, created_at, active, consent_version) "
@@ -161,11 +211,20 @@ class ProfileStore:
 
     def list_people(self, include_inactive: bool = False) -> list[Person]:
         conn, dek = self._require_unlocked()
-        query = "SELECT * FROM person"
+        clauses: list[str] = []
+        params: list[Any] = []
         if not include_inactive:
-            query += " WHERE active = 1"
+            clauses.append("active = 1")
+        if self._scope_person_id is not None:
+            # per_user login: the DEK only decrypts this user's own rows, so
+            # never even read anyone else's (they'd fail to decrypt anyway).
+            clauses.append("id = ?")
+            params.append(self._scope_person_id)
+        query = "SELECT * FROM person"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY created_at"
-        return [self._row_to_person(row, dek) for row in conn.execute(query).fetchall()]
+        return [self._row_to_person(row, dek) for row in conn.execute(query, params).fetchall()]
 
     def revoke_person(self, person_id: str, note: str = "") -> None:
         """Mark a person inactive (stops matching) without deleting their data."""

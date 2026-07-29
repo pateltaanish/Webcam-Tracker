@@ -73,6 +73,105 @@ Run these from a terminal in the repo root (`e:\Webcam-Tracker`).
    `ruff format --check` reports files that *would* be reformatted without
    changing them; drop `--check` to actually apply formatting.
 
+## Running the app -- register, log in, and track (`scripts/app.py`)
+
+`scripts\app.py` is the single program that ties Stage 2 together: it makes you
+**log in or enroll** first, then lets you preview live identity tracking. You no
+longer run separate register / track scripts -- this one menu does it all.
+
+> **On macOS / Linux:** in every command below, replace `.venv\Scripts\python.exe`
+> with `.venv/bin/python`, and `py -3.12` with `python3.12`. Everything else is
+> the same.
+
+### 1. One-time setup on a new machine
+
+Do the **Setup** steps above first (create `.venv`, install the
+`requirements*.txt` files, `pip install -e .`). Then install the identity/face
+dependencies, which `app.py` needs on top of the Stage 1 deps:
+
+```
+.venv\Scripts\python.exe -m pip install -r requirements-identity.txt
+```
+
+The face model (InsightFace `buffalo_l`, ~280 MB) auto-downloads the first time
+you enroll or track -- one-time, and needs an internet connection that once.
+
+### 2. Launch
+
+From the repo root:
+
+```
+.venv\Scripts\python.exe scripts\app.py
+```
+
+Run it in a **real terminal** (VS Code integrated terminal, PowerShell, a
+Terminal window) -- not a headless/background runner. It asks for passphrases
+(hidden input) and opens live camera windows, both of which need an interactive
+terminal and a display.
+
+### 3. First launch -- create the first account
+
+On a fresh machine there are no users yet, so you go straight to enrollment:
+
+1. Choose **[1] Enroll as new user**.
+2. **Pick the store mode** -- asked only for the very first user, and
+   **permanent** for this store:
+   - **Shared key** -- one shared passphrase for everyone; after login you can
+     track *anyone* enrolled (the original tracker behaviour). Good when one
+     operator registers and follows several people.
+   - **Per user** -- every user has their own passphrase protecting their own
+     private face data; after login the tracker follows *only you*. Good for a
+     multi-person, self-service setup.
+3. Choose a **unique username** (case-insensitive -- names can't repeat).
+4. Confirm **consent** by typing `yes`.
+5. Set your **passphrase** (at least 12 characters, entered twice).
+   **There is no recovery** -- the passphrase is never stored anywhere. In
+   per-user mode, forgetting it means deleting the account and re-enrolling; in
+   shared-key mode it can't be reset per user at all.
+6. The **camera window opens.** Line your face up until the box turns green
+   (`GOOD`) and press **SPACE** to capture each sample, following the on-screen
+   angle prompts (straight, left, right, up, down). It needs a few good samples.
+   Press `q`/`Esc` to abort -- nothing is saved, and the account is rolled back.
+
+### 4. Later launches -- log in
+
+1. Choose **[1] Log in**, then enter your username and passphrase.
+2. **Forgot your passphrase?** In per-user mode, after a wrong passphrase it
+   offers to delete that account and its face data so you can enroll again
+   (you type the username to confirm). Shared-key mode can't reset per user --
+   the passphrase belongs to everyone.
+
+### 5. After login -- the tracking menu
+
+- **[1] Preview tracking** -- opens the live tracking window. In *per-user* mode
+  it follows you automatically; in *shared* mode it lists everyone enrolled and
+  you pick who to follow. In-window keys: `e` emergency-stop, `r` resume,
+  `q`/`Esc` to return to the menu. (This is the full pipeline from
+  `preview_identity_tracking.py` -- state banner, gimbal widget, recovery,
+  perf overlay, identity labels.)
+- **[2] Change my passphrase** -- in shared mode this changes the key for
+  *everyone*.
+- **[3] List registered people** -- shared mode only.
+- **[l] Log out** (back to the login screen) / **[q] Quit**.
+
+### 6. Adding more people later
+
+Launch again and choose **[2] Enroll as new user**. In *per-user* mode anyone
+can enroll a fresh account with their own passphrase. In *shared* mode, joining
+requires entering the store's existing shared passphrase -- that's what makes it
+the shared *key*.
+
+### Where the data lives / resetting
+
+Everything is under `data\identity\` (gitignored):
+
+- `accounts.json` -- login + key metadata (store mode, KDF params, wrapped data
+  keys, salted name hashes). Safe in the clear: no passphrases, no raw names.
+- `profiles.db` -- the encrypted face embeddings.
+
+To wipe the whole system and start completely over (new mode, new users),
+delete both files.
+
 ## Project layout
 
 ```
@@ -331,6 +430,13 @@ the nearest returning track, not a verified person).
   back as a new ID") while refusing to lock onto anyone else. Capstone demo:
   `.venv\Scripts\python.exe scripts\preview_identity_tracking.py` -- pick a
   registered person and the whole pipeline follows only them.
+- **Multi-user login + unified app (done):** `scripts\app.py` is now the single
+  entry point -- it makes you **log in or enroll** before tracking, with two
+  selectable store modes (**shared key** = one passphrase, track anyone;
+  **per user** = own passphrase, track only yourself). Unique usernames, a
+  forgot-passphrase reset (per-user mode), and per-user encrypted data are layered
+  on the `database` module (`accounts.json` alongside `profiles.db`). Full
+  step-by-step runbook in the **"Running the app"** section near the top.
 
 Needs the Stage 2 deps:
 `.venv\Scripts\python.exe -m pip install -r requirements-identity.txt` (the
