@@ -36,7 +36,7 @@ Run these from a terminal in the repo root (`e:\Webcam-Tracker`).
 2. **Install dependencies**:
    ```
    .venv\Scripts\python.exe -m pip install --upgrade pip
-   .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt -r requirements-ml.txt
+   .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt -r requirements-ml.txt -r requirements-identity.txt
    .venv\Scripts\python.exe -m pip install -e . --no-deps
    ```
    `requirements-ml.txt` installs torch/torchvision/ultralytics (detection)
@@ -44,6 +44,10 @@ Run these from a terminal in the repo root (`e:\Webcam-Tracker`).
    (~2-3 GB) and pulls torch from PyTorch's own CUDA wheel index rather than
    plain PyPI (see the comments at the top of that file for why, and what to
    do on a CPU-only machine).
+   `requirements-identity.txt` is the Stage 2 identity layer (encryption,
+   passphrase hashing, face model). **The test suite does not collect without
+   it** -- `src/webcam_tracker/database/` imports `argon2` and `cryptography` at
+   module level -- so install it here even if you only plan to run tests.
    What it does: installs pinned runtime + dev dependencies, then installs
    this project itself in "editable" mode (`-e .`) so `import webcam_tracker`
    works from anywhere without reinstalling after every code change.
@@ -65,6 +69,19 @@ Run these from a terminal in the repo root (`e:\Webcam-Tracker`).
    ```
    Success looks like: `N passed` in green/plain text, with a coverage table
    above it. If a test fails, don't build on top of it -- fix it first.
+   The first run is slow: the integration tests exercise the real face model, so
+   they pull the ~280 MB `buffalo_l` pack once (cached in `%USERPROFILE%\.insightface`).
+
+   **Common error --** `Interrupted: 7 errors during collection`, each ending in
+   `ModuleNotFoundError: No module named 'argon2'` (or `cryptography`,
+   `insightface`, `onnxruntime`):
+   ```
+   .venv\Scripts\python.exe -m pip install -r requirements-identity.txt
+   ```
+   This means the venv only has the Stage 1 deps -- step 2 above was run without
+   `-r requirements-identity.txt`, which is the whole cause. It's a per-checkout
+   environment gap, never a code problem: nothing to change, nothing to commit.
+   Verify with `pip list | findstr argon2` (empty output = not installed).
 
 5. **Lint, format-check, and type-check** (run these before committing):
    ```
@@ -88,8 +105,9 @@ longer run separate register / track scripts -- this one menu does it all.
 ### 1. One-time setup on a new machine
 
 Do the **Setup** steps above first (create `.venv`, install the
-`requirements*.txt` files, `pip install -e .`). Then install the identity/face
-dependencies, which `app.py` needs on top of the Stage 1 deps:
+`requirements*.txt` files, `pip install -e .`). That already covers the
+identity/face dependencies `app.py` needs; if you installed the Stage 1 files
+only, add them now:
 
 ```
 .venv\Scripts\python.exe -m pip install -r requirements-identity.txt
