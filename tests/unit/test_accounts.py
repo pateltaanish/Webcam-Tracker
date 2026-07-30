@@ -18,8 +18,10 @@ from webcam_tracker.database.accounts import (
     AccountManager,
     NameTakenError,
     NoSuchAccountError,
+    StoreModeError,
 )
 from webcam_tracker.database.crypto import InvalidPassphraseError, KdfParams
+from webcam_tracker.database.errors import WeakPassphraseError
 from webcam_tracker.database.store import ProfileStore
 
 CHEAP = KdfParams(time_cost=1, memory_kib=8192, parallelism=1)
@@ -76,6 +78,85 @@ def test_shared_change_passphrase_rotates_for_all(accounts: AccountManager) -> N
     assert accounts.login("Bob", PASS_B) is not None
     with pytest.raises(InvalidPassphraseError):
         accounts.login("Bob", PASS)
+
+
+# --------------------------------------------------- shared personal overlay
+def test_personal_passphrase_overrides_shared(accounts: AccountManager) -> None:
+    accounts.create(MODE_SHARED, "Alice", PASS)
+    accounts.enroll("Bob", PASS)
+    accounts.set_personal_passphrase("Bob", PASS, "bobs-own-secret-1")
+
+    # Bob's own passphrase now logs him in, unlocking the SAME shared DEK.
+    assert accounts.login("Bob", "bobs-own-secret-1").dek == accounts.login("Alice", PASS).dek
+    # The shared passphrase no longer authenticates as Bob -- it's overridden.
+    with pytest.raises(InvalidPassphraseError):
+        accounts.login("Bob", PASS)
+    # Alice is unaffected -- she has no personal passphrase set.
+    assert accounts.login("Alice", PASS) is not None
+
+
+def test_setting_personal_passphrase_requires_shared_key(accounts: AccountManager) -> None:
+    accounts.create(MODE_SHARED, "Alice", PASS)
+    accounts.enroll("Bob", PASS)
+    with pytest.raises(InvalidPassphraseError):
+        accounts.set_personal_passphrase("Bob", "not-the-shared-key", "bobs-own-secret-1")
+    assert not accounts.has_personal_passphrase("Bob")
+    # Shared passphrase still works fine -- nothing changed.
+    assert accounts.login("Bob", PASS) is not None
+
+
+def test_personal_passphrase_rejects_short_passphrase(accounts: AccountManager) -> None:
+    accounts.create(MODE_SHARED, "Alice", PASS)
+    accounts.enroll("Bob", PASS)
+    with pytest.raises(WeakPassphraseError):
+        accounts.set_personal_passphrase("Bob", PASS, "short")
+    assert not accounts.has_personal_passphrase("Bob")
+
+
+def test_personal_passphrase_unknown_name(accounts: AccountManager) -> None:
+    accounts.create(MODE_SHARED, "Alice", PASS)
+    with pytest.raises(NoSuchAccountError):
+        accounts.set_personal_passphrase("Nobody", PASS, "somebodys-secret-1")
+
+
+def test_personal_passphrase_requires_shared_mode(accounts: AccountManager) -> None:
+    accounts.create(MODE_PER_USER, "Alice", PASS)
+    with pytest.raises(StoreModeError):
+        accounts.set_personal_passphrase("Alice", PASS, "somebodys-secret-1")
+    assert accounts.has_personal_passphrase("Alice") is False
+
+
+def test_personal_passphrase_can_be_reset_with_shared_key(accounts: AccountManager) -> None:
+    accounts.create(MODE_SHARED, "Alice", PASS)
+    accounts.enroll("Bob", PASS)
+    accounts.set_personal_passphrase("Bob", PASS, "bobs-first-secret")
+    accounts.set_personal_passphrase("Bob", PASS, "bobs-second-secret")
+
+    with pytest.raises(InvalidPassphraseError):
+        accounts.login("Bob", "bobs-first-secret")
+    assert accounts.login("Bob", "bobs-second-secret") is not None
+
+
+def test_change_passphrase_updates_personal_only(accounts: AccountManager) -> None:
+    accounts.create(MODE_SHARED, "Alice", PASS)
+    accounts.enroll("Bob", PASS)
+    accounts.set_personal_passphrase("Bob", PASS, "bobs-own-secret-1")
+
+    accounts.change_passphrase("Bob", "bobs-own-secret-1", "bobs-updated-secret")
+    assert accounts.login("Bob", "bobs-updated-secret") is not None
+    # The shared key is untouched -- Alice and the store-wide secret still work.
+    assert accounts.login("Alice", PASS) is not None
+
+
+def test_delete_account_clears_personal_passphrase(accounts: AccountManager) -> None:
+    accounts.create(MODE_SHARED, "Alice", PASS)
+    accounts.enroll("Bob", PASS)
+    accounts.set_personal_passphrase("Bob", PASS, "bobs-own-secret-1")
+    accounts.delete_account("Bob")
+
+    bob2 = accounts.enroll("Bob", PASS)  # a different person re-registers the freed name
+    assert not accounts.has_personal_passphrase("Bob")
+    assert accounts.login("Bob", PASS).user_id == bob2.user_id
 
 
 # ----------------------------------------------------------------- per_user mode

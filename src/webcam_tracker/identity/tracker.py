@@ -25,7 +25,7 @@ model/DB knowledge of its own, so it's testable with fakes.
 from __future__ import annotations
 
 from collections import Counter, deque
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -109,6 +109,25 @@ class IdentityTracker:
             confidence=confidence,
             is_confirmed=is_confirmed,
         )
+
+    def stable_ids(self, track_ids: Iterable[int]) -> dict[int, str]:
+        """track_id -> person_id for whichever of `track_ids` are CONFIRMED as
+        a known person right now. Use this to key on-screen labels/colors by
+        identity instead of the raw track_id: ByteTrack hands a returning
+        person a brand-new track_id after any gap longer than
+        `tracking.lost_track_buffer`, so anything keyed on track_id alone
+        visibly changes at that exact moment even though the person is the
+        same. Keying on the confirmed person_id instead means the displayed
+        id/color stop changing the moment the face re-confirms who they are,
+        which happens as soon as one identity refresh matches (see
+        `identity_of`'s confidence == 1/1 case on the very first sample)."""
+        stable: dict[int, str] = {}
+        for track_id in track_ids:
+            identity = self.identity_of(track_id)
+            if identity is not None and identity.is_confirmed:
+                assert identity.person_id is not None
+                stable[track_id] = identity.person_id
+        return stable
 
     def resolve_person(self, person_id: str) -> int | None:
         """The live track most confidently confirmed as `person_id`, or None.

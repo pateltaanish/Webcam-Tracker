@@ -145,3 +145,37 @@ class TestIdentityTracker:
         tracker.update(_IMAGE, [])  # track 1 gone
         assert tracker.identity_of(1) is None
         assert tracker.resolve_person("alice") is None
+
+    def test_stable_ids_maps_confirmed_tracks_to_person_id(self) -> None:
+        embedder = _FakeEmbedder()
+        embedder.faces = [_face(50, 50, 1.0), _face(150, 150, 0.0)]  # alice + unknown
+        tracker = _make(embedder, _FakeMatcher())
+        tracker.update(_IMAGE, [_track(1, 50, 50), _track(2, 150, 150)])
+
+        assert tracker.stable_ids([1, 2]) == {1: "alice"}  # unknown track omitted
+
+    def test_stable_ids_survives_a_track_id_change_on_reentry(self) -> None:
+        # This is the concrete "leaves and re-enters with a new track id" case:
+        # once the face re-confirms alice under the NEW track id, stable_ids
+        # reports the same person_id key it did for the old one.
+        embedder = _FakeEmbedder()
+        embedder.faces = [_face(50, 50, 1.0)]
+        tracker = _make(embedder, _FakeMatcher())
+        tracker.update(_IMAGE, [_track(1, 50, 50)])
+        assert tracker.stable_ids([1]) == {1: "alice"}
+
+        embedder.faces = []
+        tracker.update(_IMAGE, [])  # alice leaves frame; track 1 dropped
+
+        embedder.faces = [_face(50, 50, 1.0)]
+        tracker.update(_IMAGE, [_track(9, 50, 50)])  # reappears as a NEW track id
+
+        assert tracker.stable_ids([9]) == {9: "alice"}  # same stable key as before
+
+    def test_stable_ids_empty_when_nothing_confirmed(self) -> None:
+        embedder = _FakeEmbedder()
+        embedder.faces = [_face(50, 50, 0.0)]  # matches nobody
+        tracker = _make(embedder, _FakeMatcher())
+        tracker.update(_IMAGE, [_track(1, 50, 50)])
+
+        assert tracker.stable_ids([1]) == {}

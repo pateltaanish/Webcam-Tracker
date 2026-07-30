@@ -432,6 +432,8 @@ def _session_menu(
             print("  [2] Change my passphrase")
             if not personal:
                 print("  [3] List registered people")
+            if login.mode == MODE_SHARED:
+                print("  [p] Set a personal passphrase (requires the shared passphrase)")
             print("  [l] Log out")
             print("  [q] Quit")
             choice = input("Choose: ").strip().lower()
@@ -441,6 +443,8 @@ def _session_menu(
                 _change_passphrase_flow(config, accounts, login)
             elif choice == "3" and not personal:
                 _list_flow(store)
+            elif choice == "p" and login.mode == MODE_SHARED:
+                _set_personal_passphrase_flow(config, accounts, login)
             elif choice == "l":
                 return False
             elif choice in ("q", "quit", "exit"):
@@ -484,12 +488,17 @@ def _choose_session_scope(login: Login) -> bool | None:
 
 
 def _change_passphrase_flow(config: AppConfig, accounts: AccountManager, login: Login) -> None:
-    if login.mode == MODE_SHARED:
+    has_personal = login.mode == MODE_SHARED and accounts.has_personal_passphrase(
+        login.display_name
+    )
+    if login.mode == MODE_SHARED and not has_personal:
         print(
             "\nHeads up: this store uses a SHARED key. Changing it changes the\n"
             "passphrase for EVERY user -- they'll all need the new one."
         )
-    current = getpass.getpass("Current passphrase: ")
+    current = getpass.getpass(
+        "Current personal passphrase: " if has_personal else "Current passphrase: "
+    )
     minimum = config.identity.min_passphrase_length
     new = getpass.getpass(f"New passphrase (min {minimum} chars): ")
     if getpass.getpass("Confirm new passphrase: ") != new:
@@ -504,6 +513,40 @@ def _change_passphrase_flow(config: AppConfig, accounts: AccountManager, login: 
         print(f"New passphrase rejected: {exc} -- nothing changed.")
         return
     print("Passphrase changed.")
+
+
+def _set_personal_passphrase_flow(
+    config: AppConfig, accounts: AccountManager, login: Login
+) -> None:
+    """Shared-key stores only: give this login its own passphrase that
+    afterwards overrides the shared key for logging in as this name -- so a
+    device with one shared secret can still give each user a private one.
+    Requires the store's CURRENT shared passphrase every time (proof you
+    already hold the one secret everyone here shares)."""
+    if accounts.has_personal_passphrase(login.display_name):
+        print("\nYou already have a personal passphrase set -- this replaces it.")
+    else:
+        print(
+            "\nThis sets YOUR OWN passphrase for logging in as "
+            f"'{login.display_name}'. Afterwards it replaces the shared\n"
+            "passphrase for your name -- the shared passphrase alone will no "
+            "longer log you in."
+        )
+    shared_passphrase = getpass.getpass("Enter the store's shared passphrase: ")
+    minimum = config.identity.min_passphrase_length
+    new = getpass.getpass(f"Set your personal passphrase (min {minimum} chars): ")
+    if getpass.getpass("Confirm personal passphrase: ") != new:
+        print("Passphrases didn't match -- nothing changed.")
+        return
+    try:
+        accounts.set_personal_passphrase(login.display_name, shared_passphrase, new)
+    except InvalidPassphraseError:
+        print("That wasn't the store's shared passphrase -- nothing changed.")
+        return
+    except WeakPassphraseError as exc:
+        print(f"Passphrase rejected: {exc} -- nothing changed.")
+        return
+    print("Personal passphrase set. Log in with it instead of the shared passphrase from now on.")
 
 
 def _list_flow(store: ProfileStore) -> None:  # shared mode only
@@ -561,7 +604,8 @@ def _tracking_flow(
                 status = state_machine.update(tracked, width, height, image=frame.image)
 
                 image = frame.image.copy()
-                draw_tracked_people(image, tracked)
+                stable_ids = identity.stable_ids(t.track_id for t in tracked)
+                draw_tracked_people(image, tracked, stable_ids)
                 _draw_identities(image, tracked, identity)
                 draw_target_overlay(image, status.target_status)
                 draw_recovery_overlay(

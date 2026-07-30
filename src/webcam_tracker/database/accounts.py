@@ -13,6 +13,19 @@ adding named accounts with per-user passphrases in two selectable modes:
                   forgets their passphrase can delete just their own account and
                   start over.
 
+Shared-mode personal passphrase overlay: a shared store only ever had ONE
+secret, so anyone who knew it could log in as any name on that device -- there
+was no way for two people sharing a machine to each have their own login
+secret. `set_personal_passphrase` lets a named account opt into its own
+passphrase that afterwards OVERRIDES the shared one for logging in as that
+name (`login` tries the personal envelope first if one is set). Setting it up
+still requires the CURRENT shared passphrase -- it re-wraps the same store-wide
+DEK under the new personal passphrase, it does not create a new secret out of
+thin air, so proving you already hold the shared key is what stands in for
+"prove you're allowed to claim this name." This is purely an AUTHENTICATION
+change: the DEK is still the one shared secret, so it does not give data
+isolation the way per_user mode does -- use per_user mode if you need that.
+
 The account file (accounts.json, safe in the clear) holds only salts, KDF params
 and wrapped DEKs -- never a passphrase or a raw DEK. Raw names aren't stored
 either: only a per-store salted hash (`hash_name`), which is enough to enforce
@@ -160,7 +173,13 @@ class AccountManager:
     def login(self, name: str, passphrase: str) -> Login:
         """Authenticate an existing account. Raises NoSuchAccountError if the
         name isn't registered, InvalidPassphraseError if the passphrase is
-        wrong."""
+        wrong.
+
+        Shared mode: if this name has a personal passphrase set (see
+        `set_personal_passphrase`), that envelope is the ONLY thing checked --
+        it overrides the shared passphrase for this name, it isn't just an
+        alternative to it. Otherwise the shared passphrase is checked as
+        before."""
         data = self._require_store()
         mode = str(data["mode"])
         name_hash = hash_name(name, self._name_salt(data))
@@ -168,7 +187,8 @@ class AccountManager:
             names = self._names(data)
             if name_hash not in names:
                 raise NoSuchAccountError(name)
-            dek = unwrap_dek(data["keyvault"], passphrase, self._kdf)  # raises if wrong
+            envelope = data.get("personal", {}).get(name_hash, data["keyvault"])
+            dek = unwrap_dek(envelope, passphrase, self._kdf)  # raises if wrong
             return self._login_result(names[name_hash], name, dek, mode)
         # per_user
         account = data["accounts"].get(name_hash)
@@ -218,9 +238,11 @@ class AccountManager:
         path). Returns the user_id so the caller can purge that person's data.
 
         In shared mode this only frees the name for re-use; the shared DEK and
-        everyone else's access are unaffected. In per_user mode it discards the
-        account's envelope, permanently orphaning that user's encrypted data
-        (which the caller should purge)."""
+        everyone else's access are unaffected. Any personal passphrase set on
+        the name is dropped too, so a later re-registration of the same name
+        doesn't inherit a stranger's leftover personal envelope. In per_user
+        mode it discards the account's envelope, permanently orphaning that
+        user's encrypted data (which the caller should purge)."""
         data = self._require_store()
         mode = str(data["mode"])
         name_hash = hash_name(name, self._name_salt(data))
@@ -228,6 +250,7 @@ class AccountManager:
             raise NoSuchAccountError(name)
         if mode == MODE_SHARED:
             user_id = str(data["names"].pop(name_hash))
+            data.get("personal", {}).pop(name_hash, None)
         else:
             user_id = str(data["accounts"].pop(name_hash)["user_id"])
         self._write(data)
@@ -239,9 +262,11 @@ class AccountManager:
     def change_passphrase(self, name: str, current: str, new: str) -> None:
         """Change one account's passphrase.
 
-        In per_user mode this re-wraps that user's own DEK. In shared mode the
-        passphrase IS the shared key, so changing it re-wraps the store-wide
-        DEK for everyone -- every other user must then use the new key too."""
+        In per_user mode this re-wraps that user's own DEK. In shared mode: if
+        this name has a personal passphrase set, this re-wraps just that
+        personal envelope (only this user is affected); otherwise `current`
+        IS the shared key, so changing it re-wraps the store-wide DEK for
+        everyone -- every other user must then use the new key too."""
         data = self._require_store()
         mode = str(data["mode"])
         self._check_strength(new)
@@ -249,8 +274,14 @@ class AccountManager:
         if mode == MODE_SHARED:
             if name_hash not in self._names(data):
                 raise NoSuchAccountError(name)
-            dek = unwrap_dek(data["keyvault"], current, self._kdf)  # raises if wrong
-            data["keyvault"] = wrap_dek(dek, new, self._kdf)
+            personal = data.get("personal", {})
+            if name_hash in personal:
+                dek = unwrap_dek(personal[name_hash], current, self._kdf)  # raises if wrong
+                personal[name_hash] = wrap_dek(dek, new, self._kdf)
+                data["personal"] = personal
+            else:
+                dek = unwrap_dek(data["keyvault"], current, self._kdf)  # raises if wrong
+                data["keyvault"] = wrap_dek(dek, new, self._kdf)
         else:
             account = data["accounts"].get(name_hash)
             if account is None:
@@ -261,6 +292,47 @@ class AccountManager:
                 **wrap_dek(dek, new, self._kdf),
             }
         self._write(data)
+
+    # ------------------------------------------------- personal passphrase
+
+    def set_personal_passphrase(
+        self, name: str, shared_passphrase: str, personal_passphrase: str
+    ) -> None:
+        """Give one named account, in a SHARED-key store, its own passphrase
+        that afterwards overrides the shared key for logging in as that name
+        (see `login`). Re-setting it (e.g. to change it) works the same way.
+
+        Requires the store's CURRENT shared passphrase every time, not the
+        account's own history -- that's the proof of authorization (you
+        already hold the one secret everyone here shares), and it's what stops
+        someone who only knows a username from claiming a personal passphrase
+        on someone else's login before they do.
+
+        Raises StoreModeError outside shared mode, NoSuchAccountError if the
+        name isn't registered, InvalidPassphraseError if `shared_passphrase`
+        is wrong, WeakPassphraseError if `personal_passphrase` is too short."""
+        data = self._require_store()
+        mode = str(data["mode"])
+        if mode != MODE_SHARED:
+            raise StoreModeError("personal passphrases only apply to a SHARED-key store")
+        name_hash = hash_name(name, self._name_salt(data))
+        if name_hash not in self._names(data):
+            raise NoSuchAccountError(name)
+        self._check_strength(personal_passphrase)
+        dek = unwrap_dek(data["keyvault"], shared_passphrase, self._kdf)  # raises if wrong
+        personal = data.setdefault("personal", {})
+        personal[name_hash] = wrap_dek(dek, personal_passphrase, self._kdf)
+        self._write(data)
+        logger.info("Personal passphrase set", extra={"mode": mode})
+
+    def has_personal_passphrase(self, name: str) -> bool:
+        """True if `name` has a personal passphrase overriding the shared key.
+        Always False outside shared mode (or if no store exists yet)."""
+        if not self.exists() or self.mode != MODE_SHARED:
+            return False
+        data = self._read()
+        name_hash = hash_name(name, self._name_salt(data))
+        return name_hash in data.get("personal", {})
 
     # -------------------------------------------------------------- internals
 

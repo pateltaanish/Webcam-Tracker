@@ -168,10 +168,21 @@ restriction. Use per-user mode if you need real isolation between people.
   enrolled and you pick who to follow. In-window keys: `e` emergency-stop, `r`
   resume, `q`/`Esc` to return to the menu. (This is the full pipeline from
   `preview_identity_tracking.py` -- state banner, gimbal widget, recovery,
-  perf overlay, identity labels.)
+  perf overlay, identity labels.) A recognized person's box color and ID label
+  stay stable across a re-entry even though ByteTrack hands them a new
+  internal track ID -- they're keyed by identity (the registered person),
+  not the raw track ID, the moment their face re-confirms them.
 - **[2] Change my passphrase** -- in shared mode this changes the key for
-  *everyone* (keyed to the store's mode, not the session scope).
+  *everyone*, UNLESS you have a personal passphrase set (see below), in which
+  case it only changes yours.
 - **[3] List registered people** -- shared sessions only.
+- **[p] Set a personal passphrase** -- shared-mode logins only. Give your own
+  name its own passphrase, which afterwards *overrides* the shared passphrase
+  for logging in as you (the shared passphrase alone stops working for your
+  name). Setting or changing it always requires the store's current shared
+  passphrase -- that's the proof you're allowed to claim it. This only changes
+  who can log in as you; it is still not a data-isolation boundary (the DEK
+  stays the one shared secret) -- use per-user mode for that.
 - **[l] Log out** (back to the login screen) / **[q] Quit**.
 
 ### 7. Adding more people later
@@ -452,6 +463,8 @@ model auto-downloads ~280 MB on first use).
 - [x] 2.3 `FaceMatcher` -- recognize enrolled people, explicit UNKNOWN for strangers
 - [x] 2.4 `identity` fusion -- follow a registered person, reacquire by FACE across ID changes
 - [x] 2.5 Multi-user login + unified `app.py` -- log-in/enroll gate; shared-key vs per-user modes
+- [x] Per-name personal passphrase (shared mode) -- overrides the shared key for that one login
+- [x] Stable on-screen ID/color for a recognized person across a track-id change (reentry)
 - [ ] Body Re-ID (OSNet) -- recognize the target when their face is turned away
 - [ ] 2.6 Accuracy test harness -- FAR/FRR on your own captured data (tune the match threshold)
 

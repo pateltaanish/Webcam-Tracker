@@ -11,6 +11,7 @@ solve.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 
 from webcam_tracker.detection import Detection
@@ -48,5 +49,25 @@ def color_for_track_id(track_id: int) -> tuple[int, int, int]:
     """Deterministic color for a track ID -- the same ID always gets the same
     color, across frames and across runs. Unlike assign_colors (position-based,
     for raw detections), this is a genuinely stable per-person color, since a
-    track ID is a persistent identity, not a per-frame position."""
+    track ID is a persistent identity, not a per-frame position.
+
+    Note that a track ID itself is only stable while the same physical person
+    stays continuously tracked -- if they leave the frame and come back after
+    `tracking.lost_track_buffer` frames, ByteTrack assigns a brand-new track
+    ID and this color changes with it. See `color_for_key` for a key that
+    survives that (a registered person_id from `identity.IdentityTracker`)."""
     return PALETTE[track_id % len(PALETTE)]
+
+
+def color_for_key(key: int | str) -> tuple[int, int, int]:
+    """Deterministic color for any stable key -- a track_id (same as
+    `color_for_track_id`), or, more durably across track-id changes, a
+    registered person_id. Same key always gets the same color, across frames
+    and across runs (string keys are hashed with a fixed algorithm, not
+    Python's per-process-randomized `hash()`, so this holds across runs)."""
+    if isinstance(key, int):
+        index = key % len(PALETTE)
+    else:
+        digest = hashlib.sha256(key.encode("utf-8")).digest()
+        index = int.from_bytes(digest[:4], "big") % len(PALETTE)
+    return PALETTE[index]
