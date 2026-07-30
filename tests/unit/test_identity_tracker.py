@@ -125,14 +125,31 @@ class TestIdentityTracker:
     def test_cadence_skips_intermediate_frames(self) -> None:
         embedder = _FakeEmbedder()
         embedder.faces = [_face(50, 50, 1.0)]
-        tracker = _make(embedder, _FakeMatcher(), cadence=3)
+        tracker = _make(embedder, _FakeMatcher(), cadence=3, window=1)
         track = [_track(1, 50, 50)]
 
-        tracker.update(_IMAGE, track)  # frame 1 -- no refresh
-        tracker.update(_IMAGE, track)  # frame 2 -- no refresh
-        assert tracker.identity_of(1) is None
-        tracker.update(_IMAGE, track)  # frame 3 -- refresh
+        tracker.update(_IMAGE, track)  # new track -- immediate refresh
         assert tracker.resolve_person("alice") == 1
+        embedder.faces = [_face(50, 50, 2.0)]
+        tracker.update(_IMAGE, track)  # one frame since refresh
+        tracker.update(_IMAGE, track)  # two frames since refresh
+        assert tracker.resolve_person("alice") == 1
+        tracker.update(_IMAGE, track)  # three frames -- periodic refresh
+        assert tracker.resolve_person("bob") == 1
+
+    def test_new_track_bypasses_cadence_for_immediate_reidentification(self) -> None:
+        embedder = _FakeEmbedder()
+        tracker = _make(embedder, _FakeMatcher(), cadence=10)
+
+        # Put the periodic refresh far from its next scheduled run.
+        tracker.update(_IMAGE, [])
+        embedder.faces = [_face(50, 50, 1.0)]
+
+        # A returning person's new ByteTrack ID must be identified on its first
+        # visible frame, not up to nine frames later at the periodic cadence.
+        tracker.update(_IMAGE, [_track(9, 50, 50)])
+
+        assert tracker.resolve_person("alice") == 9
 
     def test_vanished_track_is_pruned(self) -> None:
         embedder = _FakeEmbedder()

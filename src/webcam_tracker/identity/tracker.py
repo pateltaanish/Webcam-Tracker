@@ -3,8 +3,8 @@
 Assigns registered-person identities to live tracks by combining face
 recognition with temporal consistency:
 
-  1. periodically (every N frames -- the face model is expensive) run the
-     embedder on the frame to find + embed all faces;
+  1. run the embedder immediately when a new track appears, then periodically
+     (every N frames -- the face model is expensive) to find + embed all faces;
   2. associate each face with the track whose box contains it;
   3. match the face against the enrolled profiles (FaceMatcher);
   4. keep a short rolling history of matches per track, and treat a track as
@@ -64,16 +64,25 @@ class IdentityTracker:
         self._min_confidence = min_confidence
         self._histories: dict[int, deque[str | None]] = {}
         self._names: dict[str, str] = {}
-        self._frame = 0
+        self._present_track_ids: set[int] = set()
+        self._frames_since_refresh = 0
 
     def update(self, image: np.ndarray, tracked_people: Sequence[TrackedPerson]) -> None:
-        """Advance one frame. The heavy face model only actually runs every
-        `update_every_n_frames`; other frames just prune vanished tracks."""
-        self._frame += 1
-        present = {t.track_id for t in tracked_people}
+        """Advance one frame.
 
-        if self._frame % self._cadence == 0:
+        New tracks bypass the normal cadence so a returning person can be
+        identified and re-locked on the first frame ByteTrack reports them.
+        Existing tracks retain the configured periodic refresh cadence.
+        """
+        self._frames_since_refresh += 1
+        present = {t.track_id for t in tracked_people}
+        has_new_track = bool(present - self._present_track_ids)
+
+        if tracked_people and (
+            has_new_track or self._frames_since_refresh >= self._cadence
+        ):
             self._refresh(image, tracked_people)
+            self._frames_since_refresh = 0
 
         # Drop identity history for tracks that are no longer present (a
         # different physical person is a different track id, so stale history
@@ -81,6 +90,7 @@ class IdentityTracker:
         for track_id in list(self._histories):
             if track_id not in present:
                 del self._histories[track_id]
+        self._present_track_ids = present
 
     def _refresh(self, image: np.ndarray, tracked_people: Sequence[TrackedPerson]) -> None:
         faces = self._embedder.detect(image)
