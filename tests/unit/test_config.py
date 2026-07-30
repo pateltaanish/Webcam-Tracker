@@ -8,14 +8,14 @@ from webcam_tracker.config.settings import PROJECT_ROOT, AppConfig, load_config
 def test_load_config_reads_yaml_defaults() -> None:
     config = load_config()
     assert config.video.source == "auto"
-    assert config.video.requested_width == 1280
-    assert config.video.requested_height == 720
+    assert config.video.requested_width == 640
+    assert config.video.requested_height == 480
     assert config.video.requested_fps == 30
     assert config.logging.level == "INFO"
     assert config.paths.models_dir == "models"
     assert config.detection.model_path == "yolo11n.pt"
     assert config.detection.confidence_threshold == 0.5
-    assert config.detection.image_size == 640
+    assert config.detection.image_size == 320
     assert config.detection.device == "auto"
     assert config.tracking.lost_track_buffer == 30
     assert config.tracking.track_activation_threshold == 0.7
@@ -38,13 +38,13 @@ def test_load_config_reads_yaml_defaults() -> None:
     assert config.identity.argon2_memory_kib == 524288
     assert config.identity.min_passphrase_length == 12
     assert config.face.model_pack == "buffalo_l"
-    assert config.face.det_size == 640
+    assert config.face.det_size == 320
     assert config.face.device == "cpu"
     assert config.face.match_threshold == 0.35
     assert config.registration.samples_required == 5
     assert config.registration.consent_version == "v1"
     assert config.registration.min_face_fraction == 0.02
-    assert config.identity_tracking.update_every_n_frames == 10
+    assert config.identity_tracking.update_every_n_frames == 30
     assert config.identity_tracking.history_window == 5
     assert config.identity_tracking.min_confidence == 0.6
 
@@ -58,7 +58,7 @@ def test_env_var_overrides_yaml_default(monkeypatch) -> None:  # type: ignore[no
     config = AppConfig()  # type: ignore[call-arg]
     assert config.video.source == "1"
     # Fields not overridden still come from the YAML default.
-    assert config.video.requested_width == 1280
+    assert config.video.requested_width == 640
 
 
 def test_resolve_path_is_relative_to_project_root() -> None:
