@@ -28,6 +28,7 @@ data/test_videos/*
 !data/test_videos/.gitkeep
 data/registrations/
 data/debug_output/
+data/recordings/
 # Encrypted identity store: profiles.db + keyvault.json sidecar (Stage 2).
 # Never commit — biometric data + per-machine key vault.
 data/identity/

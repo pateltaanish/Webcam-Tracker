@@ -313,6 +313,13 @@ accelerator yet -- that's the separate, larger `3.2` IMX500-export step).
    .venv/bin/python scripts/preview_tracking.py
    ```
 
+**To verify a trial run afterward** (e.g. mounted on a frame with no display
+attached during the run), also set `WEBCAM_TRACKER_VIDEO__RECORD=true` in
+`.env` -- `scripts/preview_tracking.py` then saves the annotated feed (boxes,
+track IDs, FPS) to `data/recordings/preview_tracking_<timestamp>.avi` as it
+runs, so you can copy the file off the Pi and watch it on a machine with a
+display once the trial is done. Off by default.
+
 **Before trusting colors** (face/Re-ID accuracy depends on it): point the
 camera at something solid red and confirm the captured frame's color channel
 order is actually BGR, not swapped -- see the docstring in

@@ -19,10 +19,18 @@ Expected output: a window titled "webcam_tracker tracking preview" showing
 your live camera feed with a colored box + "ID <n> <confidence>" label per
 tracked person, plus FPS. Press 'q' or Esc to close.
 
+Set WEBCAM_TRACKER_VIDEO__RECORD=true (or video.record: true in
+configs/default.yaml) to also save the annotated feed to
+data\\recordings\\preview_tracking_<timestamp>.avi -- useful for reviewing a
+trial run afterward on hardware with no attached display, e.g. a Pi in the
+field. The saved path is logged when the recording starts/stops.
+
 Common errors: same as scripts\\preview_webcam.py for camera issues.
 """
 
 from __future__ import annotations
+
+import time
 
 import cv2
 
@@ -32,7 +40,7 @@ from webcam_tracker.logging_utils import configure_logging, get_logger
 from webcam_tracker.perf_monitor import PerfMonitor
 from webcam_tracker.tracking import create_tracker
 from webcam_tracker.video_input import VideoSourceError, create_source
-from webcam_tracker.visualization import draw_perf_overlay, draw_tracked_people
+from webcam_tracker.visualization import FrameRecorder, draw_perf_overlay, draw_tracked_people
 
 WINDOW_NAME = "webcam_tracker tracking preview"
 
@@ -48,6 +56,12 @@ def main() -> None:
 
     source = create_source(config)
     perf = PerfMonitor(fps_window_seconds=config.perf_monitor.fps_window_seconds)
+
+    recorder = None
+    if config.video.record:
+        recordings_dir = config.resolve_path(config.paths.data_dir) / "recordings"
+        output_path = recordings_dir / f"preview_tracking_{time.strftime('%Y%m%d_%H%M%S')}.avi"
+        recorder = FrameRecorder(output_path, fps=config.video.requested_fps)
 
     try:
         with source:  # __enter__ calls source.open() -- do not call open() separately
@@ -65,6 +79,8 @@ def main() -> None:
                 draw_perf_overlay(
                     image, perf.snapshot(), extra_text=f"tracked: {len(tracked_people)}"
                 )
+                if recorder is not None:
+                    recorder.write(image)
                 cv2.imshow(WINDOW_NAME, image)
 
                 key = cv2.waitKey(1) & 0xFF
@@ -76,6 +92,8 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        if recorder is not None:
+            recorder.close()
         cv2.destroyAllWindows()
 
 

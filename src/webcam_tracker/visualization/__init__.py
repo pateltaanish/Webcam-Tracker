@@ -21,6 +21,7 @@ from webcam_tracker.visualization.draw import (
     draw_target_overlay,
     draw_tracked_people,
 )
+from webcam_tracker.visualization.recorder import FrameRecorder
 
 __all__ = [
     "PALETTE",
@@ -34,4 +35,5 @@ __all__ = [
     "draw_state_banner",
     "draw_target_overlay",
     "draw_tracked_people",
+    "FrameRecorder",
 ]

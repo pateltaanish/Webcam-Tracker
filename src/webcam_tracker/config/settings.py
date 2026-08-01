@@ -37,6 +37,10 @@ class VideoConfig(BaseModel):
     requested_width: int = Field(gt=0)
     requested_height: int = Field(gt=0)
     requested_fps: int = Field(gt=0)
+    record: bool = Field(
+        default=False,
+        description="Write each preview script's annotated output to data/recordings/.",
+    )
 
 
 class LoggingConfig(BaseModel):

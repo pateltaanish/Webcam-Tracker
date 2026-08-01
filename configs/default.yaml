@@ -31,6 +31,12 @@ video:
   requested_width: 640
   requested_height: 480
   requested_fps: 30
+  # When true, preview scripts also write their annotated output to
+  # data/recordings/<script>_<timestamp>.avi -- useful for verifying a trial
+  # run afterward on hardware with no attached display (e.g. a Pi in the
+  # field). Off by default: it's an extra file write on every frame, only
+  # worth the cost when you're actually reviewing a run.
+  record: false
 
 logging:
   level: "INFO"   # DEBUG | INFO | WARNING | ERROR
