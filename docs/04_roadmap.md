@@ -313,6 +313,9 @@ open. See `03_onboard_computer.md` for the full breakdown.
      abstraction layer for gimbal/FC. FC link is UART/MAVLink; gimbal path
      (direct Pi5 PWM/I2C vs. FC-managed MAVLink gimbal manager) still open,
      both require ArduPilot/PX4 either way.
+     **Capture path done (`raspi` branch):** `PiCameraSource` added, capture
+     only — detector still runs on Pi 5 CPU via the normal `PersonDetector`
+     path (on-sensor inference is the rest of 3.2). Gimbal/FC HAL still open.
 3.4. Startup service, watchdog, crash recovery, thermal/power monitoring,
      structured telemetry, remote debugging, safe shutdown.
 3.5. On-hardware benchmark pass against the acceptance-criteria categories in

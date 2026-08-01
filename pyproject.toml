@@ -38,3 +38,9 @@ disallow_untyped_defs = true
 [[tool.mypy.overrides]]
 module = ["insightface.*"]
 ignore_missing_imports = true
+
+# picamera2 (Pi camera capture, Stage 3) only installs on Raspberry Pi OS via
+# apt, so it's neither present nor stubbed on dev machines.
+[[tool.mypy.overrides]]
+module = ["picamera2.*"]
+ignore_missing_imports = true

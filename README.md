@@ -277,6 +277,53 @@ Two helper scripts:
   reads a handful of real frames and prints their shape/fps/timestamps; used
   to verify video_input end-to-end without a display.
 
+### Running on a Raspberry Pi 5 + AI Camera (Stage 3 smoke test)
+
+This is the first step toward Stage 3 (`docs/03_onboard_computer.md`): get
+real frames flowing through the existing pipeline on the target hardware,
+still running the detector on the Pi 5's CPU (not the camera's on-sensor
+accelerator yet -- that's the separate, larger `3.2` IMX500-export step).
+
+1. **Install picamera2 from apt, not pip** -- it wraps libcamera bindings
+   built against the OS image, there's no portable wheel:
+   ```
+   sudo apt install -y python3-picamera2
+   ```
+2. **Create the venv with access to system packages**, so it can see
+   picamera2:
+   ```
+   python3 -m venv --system-site-packages .venv
+   ```
+3. **Install dependencies without the CUDA wheel index** -- `requirements-ml.txt`
+   pins `torch==2.13.0+cu126`/`torchvision==0.28.0+cu126` from PyTorch's CUDA
+   index, which has no aarch64 build. Drop `--extra-index-url` and the
+   `+cu126` suffixes (see the comments at the top of that file):
+   ```
+   .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt torch torchvision -r requirements-identity.txt
+   .venv/bin/python -m pip install -e . --no-deps
+   ```
+4. **Point video input at the CSI camera** in a local `.env`
+   (`copy .env.example .env` first if you haven't already):
+   ```
+   WEBCAM_TRACKER_VIDEO__SOURCE=picamera
+   ```
+5. **Run a preview script from the Pi's desktop session** (or `ssh -X`,
+   never a plain SSH shell -- `cv2.imshow` needs a display):
+   ```
+   .venv/bin/python scripts/preview_tracking.py
+   ```
+
+**Before trusting colors** (face/Re-ID accuracy depends on it): point the
+camera at something solid red and confirm the captured frame's color channel
+order is actually BGR, not swapped -- see the docstring in
+`src/webcam_tracker/video_input/picamera_source.py`.
+
+**Before running the full identity pipeline** (not just detect+track): the
+Pi 5 CPU runs the currently-pinned `buffalo_l` face pack at ~1.5 FPS, which
+eats most of `VERIFYING_IDENTITY`'s ~2s timeout on its own and will look like
+a state-machine bug rather than CPU starvation. Resolve the face-model-pack
+decision in `docs/03_onboard_computer.md` §2 first.
+
 ## Person detection (Stage 1.3)
 
 `src/webcam_tracker/detection` wraps a YOLO11n model (Ultralytics),

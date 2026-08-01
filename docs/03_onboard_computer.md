@@ -95,12 +95,15 @@ constraint — still ArduPilot or PX4 only.
 
 - Face-model-pack decision (§2) — blocks trusting the CPU-only identity
   stage's real-world timing.
-- `video_input` needs a `picamera2`/`libcamera`-backed `FrameSource`
-  implementation for the IMX500 camera — the existing module is built around
-  OpenCV `VideoCapture`, which doesn't talk to a CSI/IMX500 camera directly.
-  This is new work, not a config change; the `FrameSource` interface is
-  already positioned to absorb it without touching `detection` or anything
-  downstream.
+- `video_input` now has a `picamera2`/`libcamera`-backed `FrameSource`
+  (`PiCameraSource`, `raspi` branch) — set via `WEBCAM_TRACKER_VIDEO__SOURCE=picamera`
+  in a local `.env`, per-machine as with every other source. This only covers
+  **capture**: the detector still runs on the Pi 5 CPU through the normal
+  `PersonDetector` path, same as desktop. Reading detection boxes off the
+  camera's on-sensor metadata (so the Pi 5 CPU never runs the detector, per
+  §1) is still open — it needs the IMX500 export (§2/`.rpk`) done first, plus
+  an additive `detections` field on `VideoFrame` so boxes can arrive with the
+  frame without an interface change for `detection`/`tracking` downstream.
 - FC board + frame selection (§3), once weight/thrust numbers are real.
 - On-hardware benchmark of the full pipeline (Stage 3.5) — nothing in this
   file is measured yet, all of it is spec-sheet/third-party-benchmark derived.

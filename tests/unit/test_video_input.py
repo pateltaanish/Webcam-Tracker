@@ -17,6 +17,7 @@ import pytest
 from webcam_tracker.config.settings import AppConfig, LoggingConfig, PathsConfig, VideoConfig
 from webcam_tracker.video_input import (
     FolderSource,
+    PiCameraSource,
     VideoFileSource,
     VideoSourceError,
     WebcamSource,
@@ -119,12 +120,31 @@ class TestWebcamSource:
             source.open()
 
 
+class TestPiCameraSource:
+    def test_open_without_picamera2_installed_raises(self) -> None:
+        # picamera2 only exists on Raspberry Pi OS -- on every other machine
+        # (including CI) this exercises the lazy-import guard deterministically.
+        source = PiCameraSource(requested_width=640, requested_height=480, requested_fps=30)
+        with pytest.raises(VideoSourceError, match="picamera2 is not installed"):
+            source.open()
+
+    def test_read_before_open_raises(self) -> None:
+        source = PiCameraSource(requested_width=640, requested_height=480, requested_fps=30)
+        with pytest.raises(VideoSourceError):
+            source.read()
+
+
 class TestCreateSource:
     def test_auto_dispatches_to_webcam_source_with_no_fixed_index(self, tmp_path: Path) -> None:
         config = _make_config("auto")
         source = create_source(config)
         assert isinstance(source, WebcamSource)
         assert source._requested_index is None  # noqa: SLF001 -- verifying dispatch, not behavior
+
+    def test_picamera_dispatches_to_pi_camera_source(self, tmp_path: Path) -> None:
+        config = _make_config("picamera")
+        source = create_source(config)
+        assert isinstance(source, PiCameraSource)
 
     def test_numeric_dispatches_to_webcam_source_with_fixed_index(self, tmp_path: Path) -> None:
         config = _make_config("2")

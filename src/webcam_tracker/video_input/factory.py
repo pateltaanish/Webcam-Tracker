@@ -12,6 +12,7 @@ from webcam_tracker.config import AppConfig
 from webcam_tracker.video_input.base import FrameSource, VideoSourceError
 from webcam_tracker.video_input.file_source import VideoFileSource
 from webcam_tracker.video_input.folder_source import FolderSource
+from webcam_tracker.video_input.picamera_source import PiCameraSource
 from webcam_tracker.video_input.webcam_source import WebcamSource
 
 
@@ -23,6 +24,16 @@ def create_source(config: AppConfig) -> FrameSource:
     if source.lower() == "auto":
         return WebcamSource(
             device_index=None,
+            requested_width=config.video.requested_width,
+            requested_height=config.video.requested_height,
+            requested_fps=config.video.requested_fps,
+        )
+
+    if source.lower() == "picamera":
+        # Pi-only (picamera2 imported lazily inside PiCameraSource.open());
+        # set via WEBCAM_TRACKER_VIDEO__SOURCE=picamera in a local .env, not
+        # the shared default.yaml -- see picamera_source.py's module docstring.
+        return PiCameraSource(
             requested_width=config.video.requested_width,
             requested_height=config.video.requested_height,
             requested_fps=config.video.requested_fps,
