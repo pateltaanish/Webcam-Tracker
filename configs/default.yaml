@@ -26,8 +26,10 @@ video:
   #   source: "data/test_videos/sample1.mp4"   # a single video file
   #   source: "data/test_videos"               # every video file in a folder, back to back
   source: "auto"
-  requested_width: 1280
-  requested_height: 720
+  # Keep capture/display bandwidth modest for low-power onboard computers.
+  # Detection and face recognition use their own input sizes below.
+  requested_width: 640
+  requested_height: 480
   requested_fps: 30
 
 logging:
@@ -48,9 +50,9 @@ detection:
   # false positives); higher = fewer detections (more missed people).
   confidence_threshold: 0.5
   # YOLO resizes the frame to image_size x image_size before inference.
-  # 640 is the standard YOLO default (accuracy/speed balance); smaller
-  # (e.g. 320) is faster but less accurate -- relevant later for embedded FPS.
-  image_size: 640
+  # 320 keeps the nano model real-time on CPU-class onboard hardware. Raise to
+  # 640 only when small/distant-person accuracy matters more than frame rate.
+  image_size: 320
   # "auto" uses the GPU if available (verified: RTX 3060 on the primary dev
   # machine), otherwise falls back to CPU. Override to "cpu" to force
   # CPU-only for comparison/testing.
@@ -205,7 +207,9 @@ face:
   # the accurate general pack. Auto-downloads to ~/.insightface on first use.
   # NON-COMMERCIAL model license -- see docs/model_licenses.md.
   model_pack: "buffalo_l"
-  det_size: 640
+  # 320 substantially lowers the periodic face pass cost on CPU. Re-entry
+  # recognition still runs immediately when a new track appears.
+  det_size: 320
   # "cpu" is fine for the one-time registration flow. Switch to "cuda" (needs
   # onnxruntime-gpu) for GPU inference in the live identity loop later.
   device: "cpu"
@@ -233,8 +237,9 @@ registration:
 identity_tracking:
   # Per-track identity fusion (Stage 2.4). Face recognition is expensive, so it
   # runs every N frames (tracking runs every frame); between runs each track
-  # keeps its last identity. 10 frames ~= 0.3s at 30fps.
-  update_every_n_frames: 10
+  # keeps its last identity. New tracks always bypass this cadence, so using a
+  # one-second steady-state interval reduces CPU load without delaying re-lock.
+  update_every_n_frames: 30
   # Recent identity refreshes remembered per track; the consensus over this
   # window is the track's identity, so one bad frame can't flip it.
   history_window: 5

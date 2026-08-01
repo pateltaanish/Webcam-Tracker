@@ -3,8 +3,8 @@
 Assigns registered-person identities to live tracks by combining face
 recognition with temporal consistency:
 
-  1. periodically (every N frames -- the face model is expensive) run the
-     embedder on the frame to find + embed all faces;
+  1. run the embedder immediately when a new track appears, then periodically
+     (every N frames -- the face model is expensive) to find + embed all faces;
   2. associate each face with the track whose box contains it;
   3. match the face against the enrolled profiles (FaceMatcher);
   4. keep a short rolling history of matches per track, and treat a track as
@@ -25,7 +25,7 @@ model/DB knowledge of its own, so it's testable with fakes.
 from __future__ import annotations
 
 from collections import Counter, deque
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -64,16 +64,25 @@ class IdentityTracker:
         self._min_confidence = min_confidence
         self._histories: dict[int, deque[str | None]] = {}
         self._names: dict[str, str] = {}
-        self._frame = 0
+        self._present_track_ids: set[int] = set()
+        self._frames_since_refresh = 0
 
     def update(self, image: np.ndarray, tracked_people: Sequence[TrackedPerson]) -> None:
-        """Advance one frame. The heavy face model only actually runs every
-        `update_every_n_frames`; other frames just prune vanished tracks."""
-        self._frame += 1
-        present = {t.track_id for t in tracked_people}
+        """Advance one frame.
 
-        if self._frame % self._cadence == 0:
+        New tracks bypass the normal cadence so a returning person can be
+        identified and re-locked on the first frame ByteTrack reports them.
+        Existing tracks retain the configured periodic refresh cadence.
+        """
+        self._frames_since_refresh += 1
+        present = {t.track_id for t in tracked_people}
+        has_new_track = bool(present - self._present_track_ids)
+
+        if tracked_people and (
+            has_new_track or self._frames_since_refresh >= self._cadence
+        ):
             self._refresh(image, tracked_people)
+            self._frames_since_refresh = 0
 
         # Drop identity history for tracks that are no longer present (a
         # different physical person is a different track id, so stale history
@@ -81,6 +90,7 @@ class IdentityTracker:
         for track_id in list(self._histories):
             if track_id not in present:
                 del self._histories[track_id]
+        self._present_track_ids = present
 
     def _refresh(self, image: np.ndarray, tracked_people: Sequence[TrackedPerson]) -> None:
         faces = self._embedder.detect(image)
@@ -109,6 +119,25 @@ class IdentityTracker:
             confidence=confidence,
             is_confirmed=is_confirmed,
         )
+
+    def stable_ids(self, track_ids: Iterable[int]) -> dict[int, str]:
+        """track_id -> person_id for whichever of `track_ids` are CONFIRMED as
+        a known person right now. Use this to key on-screen labels/colors by
+        identity instead of the raw track_id: ByteTrack hands a returning
+        person a brand-new track_id after any gap longer than
+        `tracking.lost_track_buffer`, so anything keyed on track_id alone
+        visibly changes at that exact moment even though the person is the
+        same. Keying on the confirmed person_id instead means the displayed
+        id/color stop changing the moment the face re-confirms who they are,
+        which happens as soon as one identity refresh matches (see
+        `identity_of`'s confidence == 1/1 case on the very first sample)."""
+        stable: dict[int, str] = {}
+        for track_id in track_ids:
+            identity = self.identity_of(track_id)
+            if identity is not None and identity.is_confirmed:
+                assert identity.person_id is not None
+                stable[track_id] = identity.person_id
+        return stable
 
     def resolve_person(self, person_id: str) -> int | None:
         """The live track most confidently confirmed as `person_id`, or None.

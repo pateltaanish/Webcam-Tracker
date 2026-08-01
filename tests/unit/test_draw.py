@@ -59,6 +59,31 @@ class TestDrawTrackedPeople:
         draw_tracked_people(image, [person])
         assert not np.array_equal(image, original)
 
+    def test_stable_id_keeps_rendering_identical_across_a_track_id_change(self) -> None:
+        # Same physical person, same box -- but a new track_id, as ByteTrack
+        # assigns after they leave and re-enter frame. With a shared
+        # stable_ids key (their confirmed person_id) the rendered box/label
+        # must be pixel-identical either way.
+        before = TrackedPerson(track_id=1, x1=10, y1=10, x2=90, y2=90, confidence=0.8)
+        after = TrackedPerson(track_id=99, x1=10, y1=10, x2=90, y2=90, confidence=0.8)
+
+        image_before = _blank_image()
+        draw_tracked_people(image_before, [before], stable_ids={1: "alice-person-id"})
+        image_after = _blank_image()
+        draw_tracked_people(image_after, [after], stable_ids={99: "alice-person-id"})
+
+        assert np.array_equal(image_before, image_after)
+
+    def test_unrecognized_track_falls_back_to_track_id_coloring(self) -> None:
+        person = TrackedPerson(track_id=1, x1=10, y1=10, x2=90, y2=90, confidence=0.8)
+
+        image_no_stable_ids = _blank_image()
+        draw_tracked_people(image_no_stable_ids, [person])
+        image_empty_map = _blank_image()
+        draw_tracked_people(image_empty_map, [person], stable_ids={})
+
+        assert np.array_equal(image_no_stable_ids, image_empty_map)
+
 
 class TestDrawPerfOverlay:
     def test_changes_pixels(self) -> None:

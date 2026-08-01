@@ -22,7 +22,7 @@ from webcam_tracker.recovery import RecoveryState, RecoveryStatus
 from webcam_tracker.state_machine import SystemStatus, TrackingState
 from webcam_tracker.target_selection import TargetStatus
 from webcam_tracker.tracking import TrackedPerson
-from webcam_tracker.visualization.colors import assign_colors, color_for_track_id
+from webcam_tracker.visualization.colors import assign_colors, color_for_key, color_for_track_id
 
 _TARGET_HIGHLIGHT_COLOR = (
     0,
@@ -46,14 +46,31 @@ def draw_detections(image: np.ndarray, detections: Sequence[Detection]) -> np.nd
     return image
 
 
-def draw_tracked_people(image: np.ndarray, tracked_people: Sequence[TrackedPerson]) -> np.ndarray:
-    """Draws a box + track ID + confidence per tracked person, colored by
-    track_id -- the same person keeps the same color across frames."""
+def draw_tracked_people(
+    image: np.ndarray,
+    tracked_people: Sequence[TrackedPerson],
+    stable_ids: dict[int, str] | None = None,
+) -> np.ndarray:
+    """Draws a box + ID + confidence per tracked person, colored by track_id --
+    the same person keeps the same color across frames, UNLESS a raw track_id
+    isn't stable enough for the caller's purposes (ByteTrack assigns a new one
+    after a person leaves and re-enters frame). Pass `stable_ids` (from
+    `IdentityTracker.stable_ids`) to key the label/color of a recognized
+    track's box by its registered person_id instead -- that key survives the
+    track_id change, so a known person's box stops changing color/label the
+    moment their face re-confirms them. Tracks absent from `stable_ids` (not
+    recognized, or no identity system in use) fall back to the track_id as
+    before."""
     for person in tracked_people:
         x1, y1, x2, y2 = (int(v) for v in (person.x1, person.y1, person.x2, person.y2))
-        color = color_for_track_id(person.track_id)
+        stable_id = stable_ids.get(person.track_id) if stable_ids else None
+        if stable_id is not None:
+            color = color_for_key(stable_id)
+            label = f"ID {stable_id} {person.confidence:.2f}"
+        else:
+            color = color_for_track_id(person.track_id)
+            label = f"ID {person.track_id} {person.confidence:.2f}"
         cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-        label = f"ID {person.track_id} {person.confidence:.2f}"
         cv2.putText(image, label, (x1, max(0, y1 - 8)), _FONT, 0.6, color, 2)
     return image
 

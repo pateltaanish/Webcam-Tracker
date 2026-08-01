@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from webcam_tracker.detection import Detection
-from webcam_tracker.visualization import PALETTE, assign_colors, color_for_track_id
+from webcam_tracker.visualization import PALETTE, assign_colors, color_for_key, color_for_track_id
 
 
 def _detection_at_x(center_x: float) -> Detection:
@@ -55,3 +55,24 @@ def test_color_for_track_id_differs_for_different_ids_within_palette_size() -> N
 
 def test_color_for_track_id_wraps_around_palette() -> None:
     assert color_for_track_id(0) == color_for_track_id(len(PALETTE))
+
+
+def test_color_for_key_matches_color_for_track_id_for_ints() -> None:
+    assert color_for_key(7) == color_for_track_id(7)
+
+
+def test_color_for_key_is_deterministic_for_strings() -> None:
+    assert color_for_key("alice-person-id") == color_for_key("alice-person-id")
+
+
+def test_color_for_key_differs_for_different_string_keys() -> None:
+    # Not guaranteed for every pair, but true for these -- catches an
+    # accidental constant-color regression.
+    assert color_for_key("alice-person-id") != color_for_key("bob-person-id")
+
+
+def test_color_for_key_is_stable_regardless_of_python_hash_randomization() -> None:
+    # Must not depend on builtin hash(), which is randomized per-process for
+    # strings -- otherwise the same person would get a different color if the
+    # app happened to restart, defeating the point of a stable identity color.
+    assert color_for_key("alice-person-id") == (0, 165, 255)

@@ -110,7 +110,9 @@ def main() -> None:
                     status = state_machine.update(tracked, width, height, image=frame.image)
 
                     image = frame.image.copy()
-                    draw_tracked_people(image, tracked)
+                    draw_tracked_people(
+                        image, tracked, identity.stable_ids(t.track_id for t in tracked)
+                    )
                     _draw_identities(image, tracked, identity)
                     draw_target_overlay(image, status.target_status)
                     draw_recovery_overlay(
