@@ -290,11 +290,29 @@ decisions (2026-07-22): encryption keyed by an **operator passphrase**
 
 ## Stage 3 — Embedded migration
 
-3.1. Finalize onboard computer purchase (per `03_onboard_computer.md`,
-     pending your R1 decision).
-3.2. Model conversion/quantization (TensorRT or HailoRT depending on choice),
-     benchmarked against Stage 1's desktop numbers.
-3.3. Camera driver integration, hardware-abstraction layer for camera/gimbal/FC.
+**Update (2026-07-31):** onboard compute is decided — Raspberry Pi 5 +
+Raspberry Pi AI Camera (IMX500), no Hailo. FC + frame are deliberately still
+open. See `03_onboard_computer.md` for the full breakdown.
+
+3.1. ~~Finalize onboard computer purchase~~ **Compute decided** (Pi 5 + AI
+     Camera, `03_onboard_computer.md` §1). Still open: FC board + airframe —
+     any ArduPilot- or PX4-capable board with a free, correctly-configured
+     UART (Betaflight does not qualify — no companion-computer offboard mode),
+     sized to the real combined weight once Pi5+camera is on hand to weigh
+     (`03_onboard_computer.md` §3).
+3.2. IMX500 export for the detector (YOLO11n → Sony MCT → `.rpk`, officially
+     supported for this exact model). Separately: **resolve the face-model-
+     pack inconsistency** flagged in `02_architecture.md` §3.3 and
+     `01_risks_and_assumptions.md` R2 — `configs/default.yaml` currently pins
+     `buffalo_l` (~1.5 FPS on Pi5 CPU, benchmarked), not the lightweight pack
+     the architecture doc says was selected (~5.2 FPS) — before trusting any
+     CPU-only identity timing. Benchmark both stages against Stage 1's desktop
+     numbers once decided.
+3.3. Camera driver integration (`picamera2`/`libcamera` `FrameSource` for the
+     IMX500 — see `02_architecture.md` `video_input` note), hardware-
+     abstraction layer for gimbal/FC. FC link is UART/MAVLink; gimbal path
+     (direct Pi5 PWM/I2C vs. FC-managed MAVLink gimbal manager) still open,
+     both require ArduPilot/PX4 either way.
 3.4. Startup service, watchdog, crash recovery, thermal/power monitoring,
      structured telemetry, remote debugging, safe shutdown.
 3.5. On-hardware benchmark pass against the acceptance-criteria categories in

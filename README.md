@@ -473,9 +473,19 @@ model auto-downloads ~280 MB on first use).
 Move onto the drone's onboard computer (see
 [`docs/03_onboard_computer.md`](docs/03_onboard_computer.md)).
 
-- [ ] 3.1 Finalize onboard computer purchase
-- [ ] 3.2 Model conversion / quantization (TensorRT or HailoRT), benchmarked vs. desktop
-- [ ] 3.3 Camera / gimbal / flight-controller hardware-abstraction layer
+Onboard compute is decided (2026-07-31): Raspberry Pi 5 + Raspberry Pi AI
+Camera (IMX500), no Hailo HAT. Flight controller + frame are deliberately
+still open -- any ArduPilot/PX4-capable board with a free UART, sized to
+weight once real numbers exist.
+
+- [x] 3.1 Finalize onboard computer -- Pi 5 + AI Camera (compute only; FC +
+      frame still open, see `docs/03_onboard_computer.md` §3)
+- [ ] 3.2 IMX500 export for the detector (YOLO11n, on-sensor); resolve the
+      face-model-pack inconsistency (`buffalo_l` vs. the lightweight pack
+      the architecture doc says was selected) before trusting CPU-only
+      identity timing -- see `docs/03_onboard_computer.md` §2
+- [ ] 3.3 Camera (`picamera2`/CSI) / gimbal / flight-controller
+      hardware-abstraction layer
 - [ ] 3.4 Startup service, watchdog, thermal/power monitoring, safe shutdown
 - [ ] 3.5 On-hardware benchmark against the acceptance criteria
 

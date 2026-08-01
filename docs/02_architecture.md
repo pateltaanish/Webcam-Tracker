@@ -87,6 +87,15 @@ Perception (`detection`→`identity`) is fully decoupled from
 simulated gimbal and Stage 3 swap in real hardware with zero changes to
 perception code (hardware-abstraction requirement from your spec).
 
+**Stage 3 gap flagged 2026-07-31:** the embedded target's camera (IMX500) is
+CSI, driven via `picamera2`/`libcamera` — not the OpenCV `VideoCapture` path
+today's `FrameSource` implementations use — and it's also where the
+detector's output metadata comes from (§3.1 above), so the new `FrameSource`
+implementation needs to hand `detection` boxes read off the camera, not run
+inference itself. This is new work behind the existing `video_input`
+interface, not a config change; `detection`/`tracking`/everything downstream
+is unaffected either way.
+
 ## 3. Model comparison and selections
 
 ### 3.1 Person detector
@@ -103,8 +112,7 @@ perception code (hardware-abstraction requirement from your spec).
 
 **Selection: YOLO11n (Ultralytics), person class only, for Stage 1.**
 Rationale: best speed/accuracy ratio, by far the best documentation for a CV
-beginner, first-class TensorRT export path for Stage 3 (Jetson) or ONNX path
-for Hailo. The AGPL license is a real constraint (R4) — if you later want to
+beginner. The AGPL license is a real constraint (R4) — if you later want to
 close-source or commercially distribute this project without releasing
 source, you'd need Ultralytics' commercial license or we swap to YOLOX-Nano
 (Apache-2.0, slightly more integration work, documented as a drop-in
@@ -112,6 +120,16 @@ alternative in the detector module's interface). I'm flagging this rather
 than deciding it for you because it's a legal/business choice, not a
 technical one — let me know your intended distribution model when it matters
 (not urgent for Stage 1 personal development use).
+
+**Deployment path (updated 2026-07-31, see `03_onboard_computer.md`):** the
+Jetson/TensorRT and Hailo/ONNX paths this section originally weighed are
+superseded — the decided embedded target is the Raspberry Pi AI Camera
+(IMX500), which runs the detector **on-sensor**, not on the host CPU/GPU at
+all. Ultralytics officially supports IMX500 export for YOLOv8n and YOLO11n
+specifically (PyTorch → Sony MCT → `.rpk`), which is exactly the model
+already selected above — no detector swap needed for this migration, only a
+new export/conversion step and a `picamera2`-backed `FrameSource` (see
+`video_input` in the module table below).
 
 ### 3.2 Multi-object tracker
 
@@ -157,6 +175,19 @@ Stage 2: pin exact weight files and record their individual license terms in
 `docs/model_licenses.md` before we ship anything — InsightFace bundles some
 models trained on datasets with non-commercial research restrictions, and we
 will not silently ignore that.
+
+**Inconsistency flagged 2026-07-31:** what actually got pinned in Stage 2.2
+is InsightFace's `buffalo_l` pack (`det_10g` + `w600k_r50`) — the *large*
+combo, not the lightweight one this section describes. That was a defensible
+call for desktop development on the RTX 3090 (GPU makes the speed difference
+moot, and it's more accurate), but it's not what this section says was
+selected, and it matters now that the decided embedded target
+(`03_onboard_computer.md`) has no NPU backing this stage — CPU-only Pi 5
+benchmarks put `buffalo_l` around ~669 ms (~1.5 FPS) vs. ~194 ms (~5.2 FPS)
+for the lightweight combo actually described here. This needs an explicit
+decision before Stage 3.2, not a silent resolution — see
+`03_onboard_computer.md` §2 and `docs/database_design.md` §7, which also
+currently (incorrectly) states `buffalo_l` "matches" this section.
 
 ### 3.4 Person re-identification (body appearance)
 

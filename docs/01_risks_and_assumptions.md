@@ -39,8 +39,17 @@ rather go a different direction):**
    `03_onboard_computer.md` for the full tradeoff — this is viable but with
    real accuracy/flexibility costs.
 
-I'll ask you explicitly which path you want before we lock in hardware
-purchases (§ "Decision needed" below).
+**Update (2026-07-31) — decided, superseding the above.** Compute is
+Raspberry Pi 5 + Raspberry Pi AI Camera (IMX500), no Hailo HAT at all — see
+`03_onboard_computer.md` §1. This lands even lighter than option 3 above
+(~50–60 g bare vs. ~70 g), because the detector runs on-sensor and there's no
+separate accelerator board. This substantially eases (but doesn't eliminate)
+the tension this risk describes — mitigation 1 (validate on a larger frame
+first) is still the right sequencing, just with more margin than the Jetson
+scenario this section was originally written against. What replaces mitigation
+3 as the live open question is no longer *which* compute board, but whether
+CPU-only face/Re-ID inference (no NPU backs that stage in this decision) hits
+usable timing — see R2's update below and `03_onboard_computer.md` §2.
 
 ## R2 — 30 FPS with the full identity+Re-ID pipeline on embedded hardware is optimistic (MEDIUM)
 
@@ -55,6 +64,18 @@ continuity in between. Treat 30 FPS as the tracker/gimbal-loop rate, and
 identity re-confirmation as a slower background rate. We'll measure real
 numbers on your actual onboard hardware in Stage 3 rather than promise a
 figure now.
+
+**Update (2026-07-31).** With the Pi5+AI Camera decision (R1 update above),
+the detector+tracker loop is *easier* to hit than this section originally
+worried about — the detector runs on-sensor and doesn't compete for Pi 5 CPU
+at all. The tradeoff moved, not disappeared: face/Re-ID now has **zero NPU
+margin** (no Hailo), and there's a live, concrete instance of this risk —
+`configs/default.yaml` currently pins the `buffalo_l` face model pack, which
+external benchmarks put at ~669 ms (~1.5 FPS) on Pi 5 CPU, vs. ~194 ms
+(~5.2 FPS) for the lightweight pack `docs/02_architecture.md` §3.3 actually
+says was selected. That's a real, unresolved inconsistency between what the
+architecture doc claims and what's configured — see
+`03_onboard_computer.md` §2 for the full breakdown and the action item.
 
 ## R3 — Face recognition will not work "when the face is not visible" — that's what Re-ID is for (MEDIUM, expectation-setting)
 
@@ -95,14 +116,17 @@ noting it compounds with R1/R2.
 
 ## Decision needed before hardware purchase
 
-Given R1, do you want to:
-- **(A)** Build/test the full pipeline on a larger (~500 g) validation frame
-  first, then do a dedicated weight-optimization pass toward 250 g later, or
-- **(B)** Commit to the lighter/cheaper compute (Raspberry Pi 5 + Hailo-8L)
-  from day one to stay closer to 250 g immediately, accepting a smaller,
-  less flexible model set and a harder embedded-deployment path?
+**Update (2026-07-31) — the compute half of this is resolved.** Onboard
+compute is Raspberry Pi 5 + Raspberry Pi AI Camera (IMX500) — decided, see
+`03_onboard_computer.md` §1. Path A's "validate on a larger frame first"
+sequencing still stands; it's just less urgent now given the lighter
+Pi5+camera weight than the Jetson scenario this was originally weighed
+against.
 
-I lean toward (A) — it de-risks the software (the hard, novel part of this
-project) before fighting grams (a hardware-selection problem with diminishing
-returns on debugging time) — but this is your call and your budget. We can
-revisit after Stage 1 gives us real performance numbers.
+What's still open, and still needs a call before hardware purchase:
+- The face-model-pack decision (R2 update above / `03_onboard_computer.md`
+  §2) — affects whether the identity stage is usable on CPU alone.
+- Flight controller + airframe (`03_onboard_computer.md` §3) — deliberately
+  left unspecified; any ArduPilot- or PX4-capable board with a free,
+  correctly-configured UART, sized to whatever the real combined AUW turns
+  out to be once Pi5+camera is on hand to weigh.

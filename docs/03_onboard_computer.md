@@ -1,75 +1,106 @@
 # Onboard Computer Selection
 
-Read `01_risks_and_assumptions.md` §R1 first — the 250 g target and a
-Jetson-class computer are in tension, and this comparison is written with
-that tradeoff explicit rather than hidden.
+**Status: Compute + camera DECIDED (2026-07-31). Flight controller + frame
+deliberately left open — see §2.** The original three-way comparison
+(Jetson Orin Nano vs. Pi 5+Hailo-8L vs. Jetson Orin NX) that used to live in
+this file is superseded by that decision; it's preserved in git history if
+you want to revisit the reasoning, not duplicated here.
 
-## Comparison
+## 1. Decision: Raspberry Pi 5 (8GB) + Raspberry Pi AI Camera (IMX500)
 
-| Criterion | **Jetson Orin Nano Super Dev Kit** (primary) | **Raspberry Pi 5 (8GB) + Hailo-8L AI HAT+** (lower-cost/lighter) | **Jetson Orin NX 16GB module** (higher-performance, for reference) |
-|---|---|---|---|
-| Board weight (bare, no cooling/camera/gimbal) | ~130–140 g (full carrier + module) | ~46 g (Pi5) + ~25 g (HAT) ≈ **~71 g total** | ~35–45 g module only, but needs a carrier board (+50–80 g) — comparable total to Orin Nano devkit |
-| Cooling required | Active (fan) recommended under sustained load; adds ~10–20 g + power draw | Passive heatsink sufficient for our workload | Active cooling required, more thermal headroom needed than Orin Nano |
-| Power consumption | 7–25 W configurable power modes | ~5–12 W (Pi5 + Hailo combined) | 10–25 W+ |
-| AI acceleration | Ampere GPU, 67 TOPS INT8 (Super mode) | Hailo-8L NPU, 13 TOPS INT8 | Ampere GPU, up to 100 TOPS INT8 |
-| Compute for our pipeline (detector+tracker+face+reid) | Comfortable margin, room to run multiple models per frame | Workable for detector+tracker every frame; face/reid must run at reduced rate to hold FPS | Most margin of the three |
-| Camera compatibility | MIPI-CSI (2x), USB, broad support | MIPI-CSI (2x on Pi5), USB | MIPI-CSI, USB |
-| GPIO / UART / I2C / SPI / USB / PWM | Full GPIO header, UART/I2C/SPI, USB 3.2, PWM via GPIO or companion MCU | Full GPIO header, UART/I2C/SPI, USB 3.0, PWM via GPIO | Depends on chosen carrier board; generally full support |
-| Model-conversion / deployment path | **TensorRT** — direct PyTorch→ONNX→TensorRT, best-documented path for exactly our model set (YOLO, ONNX-exportable face/reid models) | ONNX→**HailoRT compiler** — works, but a narrower toolchain, smaller community, more friction for a first embedded project | Same as Orin Nano (TensorRT) |
-| Software ecosystem maturity | Excellent — full Ubuntu/L4T, CUDA, PyTorch, huge community, most tutorials assume Jetson | Good general Pi ecosystem, but Hailo-specific ML tooling is newer/thinner | Same as Orin Nano |
-| Boot time | ~15–25 s typical | ~10–15 s typical | Similar to Orin Nano |
-| Reliability / availability | Widely available, NVIDIA-backed, long track record in robotics/drones | Widely available, Raspberry Pi Foundation-backed | Available but pricier, more niche for hobbyist drones |
-| Cost | **$249** (Super Dev Kit) | **~$80 (Pi5 8GB) + ~$70 (Hailo-8L HAT+) ≈ $150** | **~$599 module alone** (before any carrier) |
-| Flight-controller integration | UART/USB to a standard FC (e.g. running Betaflight/ArduPilot/PX4) — well-trodden path in the drone/robotics community | Same UART/USB path, equally viable | Same |
-| Gimbal-controller integration | UART/I2C/PWM — standard | Same | Same |
-| Fits our $350 compute+camera+gimbal budget? | Tight — leaves ~$100 for camera+gimbal | Comfortable — leaves ~$200 for camera+gimbal | **No** — blows the entire budget on compute alone |
-| Fits path toward 250 g AUW? | Very difficult without R1's mitigation plan | Realistic — best option if 250 g is a day-1 hard constraint | Same difficulty as Orin Nano, worse |
+No separate NPU accelerator (no Hailo-8L / AI HAT+). Division of labor:
 
-### A fourth option worth knowing about: Luxonis OAK-D-Lite
+| Pipeline stage | Runs where | Notes |
+|---|---|---|
+| Person detection (YOLO11n) | **On-sensor**, IMX500's built-in inference accelerator | Model goes through Sony's Model Compression Toolkit → `packerOut.zip` → `imx500-package` → `.rpk`, loaded onto the camera at runtime via `picamera2`'s `IMX500` device class. Ultralytics officially supports IMX500 export for YOLOv8n and YOLO11n specifically — this project's already-selected detector — so no model swap is needed for this stage. The camera returns bounding boxes as capture metadata alongside each frame; the Pi 5 CPU never runs the detector. |
+| Tracking (ByteTrack) | Pi 5 CPU | Unchanged from desktop — not a neural net, cheap either way. Consumes the boxes read from camera metadata instead of a `PersonDetector.infer()` call. |
+| Face detect + embed (SCRFD/ArcFace), Re-ID (OSNet) | Pi 5 CPU, via `onnxruntime` (CPU execution provider) | No accelerator backs this stage now — see the open risk below. |
 
-Not in the main table because it's a different category — a **camera with an
-onboard AI accelerator (Myriad X VPU) built in**, not a general-purpose
-computer. It can run the detector (and potentially a second model) directly
-on the camera module itself, offloading work from whatever host computer you
-pair it with. Weight is roughly 60–90 g *including the camera*, and it uses
-the OpenVINO toolchain (mature, but distinct from both TensorRT and
-HailoRT — a third ecosystem to learn). Worth a serious look during Stage 3
-hardware finalization if the Pi5+Hailo path turns out too slow for detector+
-tracker at once, since it effectively adds a second, camera-integrated
-accelerator to the system. I'm not recommending it as primary now because
-it complicates the architecture (two accelerators/toolchains instead of one)
-before we've even validated the software — but it's a good escape hatch.
+**Weight/power estimate:** ~50–60 g for the two boards bare, more like
+60–75 g once cabled/mounted — dramatically lighter than the Jetson-class
+figures R1 was originally worried about, and lighter than the Pi5+Hailo
+figure this doc previously carried, since there's no separate accelerator
+board. Power: Pi 5 CPU load (tracking + periodic face/Re-ID) plus the
+camera's on-sensor inference (on the order of 100 mW) is roughly **4–9 W**
+combined — well under the Pi5+Hailo estimate, since the AI HAT+'s own 8–14 W
+draw under load is gone entirely.
 
-## Recommendation
+**Toolchain:** one conversion path (IMX500/Sony MCT, one-time, for the
+detector only) plus plain `onnxruntime` CPU inference for everything else —
+no HailoRT, no TensorRT. Simplest toolchain of any option considered so far.
 
-**Primary: Jetson Orin Nano Super Dev Kit ($249).** Best software ecosystem
-for a CV beginner (TensorRT/PyTorch/CUDA, the vast majority of embedded-CV
-tutorials and community troubleshooting target Jetson), most compute margin
-for running detector+tracker+face+reid without aggressive frame-skipping,
-proven track record in hobbyist/research drones. Tradeoff, per R1: this
-consumes ~70% of the $350 budget and makes 250 g AUW unrealistic on the first
-build — I'm recommending we validate on a larger (~500 g) test frame first,
-then do a dedicated weight pass (e.g., migrating to a bare Orin Nano module
-on a minimal third-party carrier, which can shave 30–50 g).
+## 2. Open risk carried by this decision: CPU-only face/Re-ID throughput
 
-**Lower-cost/lighter alternative: Raspberry Pi 5 (8GB) + Hailo-8L AI HAT+
-(~$150 total).** Nearly half the cost, roughly half the weight of the Jetson
-devkit. This is the pragmatic choice if you'd rather stay closer to 250 g
-from day one (Path B in R1) and accept a narrower, less-documented model
-toolchain and reduced margin for running all four models at full rate.
+Dropping the Hailo NPU means face recognition and Re-ID have no accelerator
+margin. Real Pi 5 CPU benchmarks for this exact model family:
 
-**Higher-performance alternative (reference only, not fitting this
-project's constraints): Jetson Orin NX 16GB.** Roughly 1.5–2x the compute of
-Orin Nano, but ~$599 for the module alone (before a carrier board) — blows
-the entire hardware budget on compute alone, with no meaningful weight
-advantage. I would not recommend this unless the budget or weight target
-changes substantially (e.g., a second, larger sibling drone down the line).
+| Face model combo | Pi 5 CPU time | Rate |
+|---|---|---|
+| `scrfd_10g` + `arcface_r50` — **this is what `buffalo_l` actually is, the pack currently pinned in `configs/default.yaml:209` and documented in `docs/database_design.md`/`docs/model_licenses.md`** | ~669 ms | ~1.5 FPS |
+| `scrfd_2.5g` + `arcface_mobilefacenet` — the "lightweight backbone" `docs/02_architecture.md` §3.3 says was selected, but wasn't what got implemented | ~194 ms | ~5.2 FPS |
 
-## Decision
+This is the model-pack inconsistency flagged at the top of this review: as
+currently configured, the identity stage would run at ~1.5 FPS on this
+hardware, which eats a large fraction of the state machine's
+`VERIFYING_IDENTITY` (~2 s) and occlusion (~1–2 s) timeouts on its own,
+before Re-ID or state-machine overhead. Swapping to the lightweight pack
+(`buffalo_s`, or `scrfd_2.5g`+MobileFaceNet directly) is a one-line config
+change and gets into a workable range for the periodic (not every-frame)
+cadence R2 already calls for. **Action item before Stage 3.2:** make and
+record that model-pack decision explicitly (it's a licensing/accuracy
+tradeoff, not just a performance one — see `docs/model_licenses.md`), and
+benchmark OSNet's real Pi-class CPU time too (only anecdotal, non-Pi-verified
+numbers exist for it right now).
 
-Deferred to you per R1's "Decision needed" — I've defaulted the roadmap to
-**Path A (Jetson Orin Nano, validate on a larger test frame first)** since it
-best serves the software-correctness goals of this project, but this is
-easily reversible: nothing in Stage 1 (desktop prototype) depends on this
-choice, and Stage 3 planning won't finalize hardware purchases until we've
-seen real Stage 1 performance numbers on your RTX 3090 to extrapolate from.
+If CPU-only proves insufficient even with the lightweight pack, the Hailo
+HAT+ isn't foreclosed — it can be added later to carry just the face/Re-ID
+stage, since the detector stays on-sensor either way and doesn't compete for
+the same accelerator.
+
+## 3. Flight controller + frame: intentionally left open
+
+No specific board or airframe is chosen. Because the only link between the
+perception/compute stack and the airframe is a UART carrying MAVLink, FC and
+frame selection is decoupled from everything in §1 — pick later, based on
+availability and the weight/thrust budget once real Pi5+camera weight is
+measured. Two hard constraints apply to whatever is picked, both non-negotiable
+given how this project's `drone_control` module is designed (movement
+*requests*, never raw motor access):
+
+1. **Firmware must be ArduPilot (GUIDED mode) or PX4 (OFFBOARD mode).**
+   Both accept externally-supplied position/velocity/attitude setpoints from
+   a companion computer over MAVLink — this is exactly the shape of
+   `drone_control`'s output. **Betaflight does not qualify** — it only
+   speaks MAVLink for outbound telemetry, with no mechanism to accept
+   autonomous setpoints from a companion computer. This rules out a large
+   share of cheap FPV-racing boards, not just an edge case, so check firmware
+   support before any FC purchase, not just UART presence.
+2. **A free, correctly-configured UART on the FC**, 3.3 V TTL (matches the
+   Pi 5's GPIO UART directly), both ends on the same baud rate (57600 or
+   115200 are the common MAVLink defaults). Some smaller boards share their
+   companion-computer-designated port (e.g. PX4's TELEM2) with GPS or a
+   telemetry radio — confirm one is actually free on the specific board
+   before buying.
+
+Given those two constraints are met, frame/motor/battery selection is a pure
+mechanical/electrical sizing question against the combined AUW (compute +
+camera + FC + frame + battery), consistent with R1's existing plan: validate
+on a larger frame first, do a dedicated weight pass once real numbers exist.
+
+If the gimbal ends up FC-managed (MAVLink Gimbal Protocol v2) rather than
+driven directly from the Pi 5 (PWM/I2C), that reinforces the same firmware
+constraint — still ArduPilot or PX4 only.
+
+## 4. What's still open
+
+- Face-model-pack decision (§2) — blocks trusting the CPU-only identity
+  stage's real-world timing.
+- `video_input` needs a `picamera2`/`libcamera`-backed `FrameSource`
+  implementation for the IMX500 camera — the existing module is built around
+  OpenCV `VideoCapture`, which doesn't talk to a CSI/IMX500 camera directly.
+  This is new work, not a config change; the `FrameSource` interface is
+  already positioned to absorb it without touching `detection` or anything
+  downstream.
+- FC board + frame selection (§3), once weight/thrust numbers are real.
+- On-hardware benchmark of the full pipeline (Stage 3.5) — nothing in this
+  file is measured yet, all of it is spec-sheet/third-party-benchmark derived.
