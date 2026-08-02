@@ -9,6 +9,36 @@ This project only identifies people who have knowingly registered and
 consented. It is not designed for surveillance or identifying strangers. See
 `docs/00_engineering_spec.md` for the full spec and non-goals.
 
+## Contents
+
+- [Documentation](#documentation)
+- [Setup (Windows, Stage 1)](#setup-windows-stage-1)
+- [Running the app -- register, log in, and track (`scripts/app.py`)](#running-the-app----register-log-in-and-track-scriptsapppy)
+  - [1. One-time setup on a new machine](#1-one-time-setup-on-a-new-machine)
+  - [2. Launch](#2-launch)
+  - [3. First launch -- create the first account](#3-first-launch----create-the-first-account)
+  - [4. Later launches -- log in](#4-later-launches----log-in)
+  - [5. After login -- pick the session scope](#5-after-login----pick-the-session-scope)
+  - [6. The tracking menu](#6-the-tracking-menu)
+  - [7. Adding more people later](#7-adding-more-people-later)
+  - [Where the data lives / resetting](#where-the-data-lives--resetting)
+- [Project layout](#project-layout)
+- [Configuration](#configuration)
+- [Video input (Stage 1.2)](#video-input-stage-12)
+  - [Running on a Raspberry Pi 5 + AI Camera (Stage 3 smoke test)](#running-on-a-raspberry-pi-5--ai-camera-stage-3-smoke-test)
+- [Person detection (Stage 1.3)](#person-detection-stage-13)
+- [Person tracking (Stage 1.4)](#person-tracking-stage-14)
+- [Visualization & performance monitoring (Stage 1.5)](#visualization--performance-monitoring-stage-15)
+- [Manual target selection (Stage 1.6)](#manual-target-selection-stage-16)
+- [Simulated gimbal control (Stage 1.7)](#simulated-gimbal-control-stage-17)
+- [Motion prediction & target-loss recovery (Stage 1.8)](#motion-prediction--target-loss-recovery-stage-18)
+- [Tracking state machine (Stage 1.9)](#tracking-state-machine-stage-19)
+- [Integration pass (Stage 1.10)](#integration-pass-stage-110)
+- [Project roadmap & status](#project-roadmap--status)
+  - [Stage 1 -- Desktop tracking prototype (identity-free) -- COMPLETE](#stage-1----desktop-tracking-prototype-identity-free----complete)
+  - [Stage 2 -- Registration & identity -- IN PROGRESS](#stage-2----registration--identity----in-progress)
+  - [Stage 3 -- Embedded migration -- PLANNED](#stage-3----embedded-migration----planned)
+
 ## Documentation
 
 - [`docs/00_engineering_spec.md`](docs/00_engineering_spec.md) -- requirements, confirmed constraints, acceptance-criteria categories
