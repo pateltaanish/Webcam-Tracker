@@ -61,6 +61,25 @@ def test_env_var_overrides_yaml_default(monkeypatch) -> None:  # type: ignore[no
     assert config.video.requested_width == 640
 
 
+def test_dotenv_file_overrides_yaml_default(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # .env is gitignored, so it may or may not exist on a given machine --
+    # write a real one, then restore whatever was there. Running from tmp_path
+    # also proves env_file is resolved against PROJECT_ROOT, not the cwd.
+    env_path = PROJECT_ROOT / ".env"
+    saved = env_path.read_text(encoding="utf-8") if env_path.exists() else None
+    env_path.write_text("WEBCAM_TRACKER_VIDEO__SOURCE=picamera\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    try:
+        config = AppConfig()  # type: ignore[call-arg]
+    finally:
+        if saved is None:
+            env_path.unlink()
+        else:
+            env_path.write_text(saved, encoding="utf-8")
+    assert config.video.source == "picamera"
+    assert config.video.requested_width == 640
+
+
 def test_resolve_path_is_relative_to_project_root() -> None:
     config = load_config()
     resolved = config.resolve_path(config.paths.models_dir)

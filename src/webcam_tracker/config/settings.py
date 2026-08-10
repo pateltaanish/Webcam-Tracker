@@ -350,6 +350,11 @@ class AppConfig(BaseSettings):
 
     model_config = SettingsConfigDict(
         yaml_file=str(os.environ.get("WEBCAM_TRACKER_CONFIG_FILE", _DEFAULT_CONFIG_PATH)),
+        # Absolute, not ".env" -- pydantic-settings resolves a relative env_file
+        # against the *current working directory*, so scripts run from anywhere
+        # but the repo root would silently ignore it. Without this line the
+        # dotenv source below has no file at all and .env is a no-op.
+        env_file=PROJECT_ROOT / ".env",
         env_prefix="WEBCAM_TRACKER_",
         env_nested_delimiter="__",
         extra="forbid",
