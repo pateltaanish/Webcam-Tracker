@@ -26,6 +26,7 @@ consented. It is not designed for surveillance or identifying strangers. See
 - [Configuration](#configuration)
 - [Video input (Stage 1.2)](#video-input-stage-12)
   - [Running on a Raspberry Pi 5 + AI Camera (Stage 3 smoke test)](#running-on-a-raspberry-pi-5--ai-camera-stage-3-smoke-test)
+  - [Live footage viewing over HTTP (headless -- no display needed)](#live-footage-viewing-over-http-headless----no-display-needed)
 - [Person detection (Stage 1.3)](#person-detection-stage-13)
 - [Person tracking (Stage 1.4)](#person-tracking-stage-14)
 - [Visualization & performance monitoring (Stage 1.5)](#visualization--performance-monitoring-stage-15)
@@ -272,6 +273,8 @@ src/webcam_tracker/   Application code, one package per pipeline stage
   reid/               Body-appearance re-identification             (Stage 2)
   identity/           Fuses face+reid+temporal into confidence      (Stage 2)
   database/           Encrypted registered-user store               (Stage 2)
+  hazard/             Looming-based hazard detection (time-to-collision)
+  streaming/          Live MJPEG video + SSE hazard events over HTTP
 configs/default.yaml  All non-secret tunables
 tests/unit/           Unit tests, one module per package
 tests/integration/    End-to-end pipeline tests
@@ -324,24 +327,43 @@ accelerator yet -- that's the separate, larger `3.2` IMX500-export step).
    ```
    python3 -m venv --system-site-packages .venv
    ```
-3. **Install dependencies without the CUDA wheel index** -- `requirements-ml.txt`
-   pins `torch==2.13.0+cu126`/`torchvision==0.28.0+cu126` from PyTorch's CUDA
-   index, which has no aarch64 build. Drop `--extra-index-url` and the
-   `+cu126` suffixes (see the comments at the top of that file):
+3. **Install dependencies from PyTorch's CPU wheel index, not plain PyPI.**
+   `requirements-ml.txt` pins `torch==2.13.0+cu126`/`torchvision==0.28.0+cu126`
+   from PyTorch's CUDA index, which has no aarch64 build, so skip that file
+   entirely rather than adapting it. Plain `pip install torch` isn't a safe
+   fallback either: on aarch64 Linux it silently resolves to PyPI's default
+   CUDA-linked wheel, which `dlopen`s `libcudart.so` at import time and
+   crashes immediately on a Pi (`OSError: libcudart.so.13: cannot open shared
+   object file`) since there's no GPU. Use PyTorch's dedicated CPU index
+   instead, then install the same detection/tracking packages
+   `requirements-ml.txt` would have (minus torch, already installed):
    ```
-   .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt torch torchvision -r requirements-identity.txt
+   .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt -r requirements-identity.txt
+   .venv/bin/python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.13.0 torchvision
+   .venv/bin/python -m pip install ultralytics==8.4.102 trackers==2.5.0.post0 supervision==0.29.1
    .venv/bin/python -m pip install -e . --no-deps
+   ```
+   **If a pip install fails with "No space left on device":** `/tmp` on many
+   Raspberry Pi OS images is a small RAM-backed tmpfs (2 GB), and a ~155 MB
+   download like the CPU torch wheel can fill it -- especially after an
+   interrupted install leaves orphaned `pip-unpack-*` directories behind.
+   Point pip's temp dir at real disk instead (create the directory first):
+   ```
+   TMPDIR=~/pip_tmp .venv/bin/python -m pip install ...
    ```
 4. **Point video input at the CSI camera** in a local `.env`
    (`copy .env.example .env` first if you haven't already):
    ```
    WEBCAM_TRACKER_VIDEO__SOURCE=picamera
    ```
-5. **Run a preview script from the Pi's desktop session** (or `ssh -X`,
-   never a plain SSH shell -- `cv2.imshow` needs a display):
+5. **Run a preview script.** With a display attached (the Pi's desktop
+   session, or `ssh -X` -- never a plain SSH shell, `cv2.imshow` needs a
+   display):
    ```
    .venv/bin/python scripts/preview_tracking.py
    ```
+   **Without a display** -- the actual drone case, no monitor, no X11 --
+   stream it over HTTP instead; see the next section.
 
 **To verify a trial run afterward** (e.g. mounted on a frame with no display
 attached during the run), also set `WEBCAM_TRACKER_VIDEO__RECORD=true` in
@@ -360,6 +382,36 @@ Pi 5 CPU runs the currently-pinned `buffalo_l` face pack at ~1.5 FPS, which
 eats most of `VERIFYING_IDENTITY`'s ~2s timeout on its own and will look like
 a state-machine bug rather than CPU starvation. Resolve the face-model-pack
 decision in `docs/03_onboard_computer.md` §2 first.
+
+### Live footage viewing over HTTP (headless -- no display needed)
+
+`scripts/preview_tracking.py` can serve the live annotated feed over HTTP
+instead of opening a `cv2.imshow` window -- the practical way to watch it on
+hardware with no attached display, e.g. a drone in the field. It streams from
+inside the same process that owns the camera, publishing each frame into an
+in-memory slot as soon as it's drawn, so there's no file-write-then-poll hop
+in the way. Works on any machine, not just the Pi.
+
+Enable it via `.env` or an env var:
+```
+WEBCAM_TRACKER_STREAMING__ENABLED=true
+```
+Then run the preview script as usual -- it skips the local window entirely,
+so the only way to stop it is Ctrl+C (there's no window to press 'q' in):
+```
+.venv/bin/python scripts/preview_tracking.py
+```
+Open `http://<device-ip>:8080/` (port from `streaming.port` in
+`configs/default.yaml`) in a browser on any other device on the same
+network. That page shows the live feed plus a running log of hazard alerts
+(time-to-collision from box-growth looming -- see `src/webcam_tracker/hazard`)
+as they fire. `GET /stream` is the raw MJPEG feed, openable directly in
+VLC/mpv; `GET /events` is the same alerts as a Server-Sent stream.
+
+**No authentication** -- anyone who can reach `streaming.host:streaming.port`
+can watch. The default `0.0.0.0` binds every interface; set it to
+`127.0.0.1` and put a tunnel (Tailscale, `ssh -L`) in front for anything
+beyond a trusted LAN.
 
 ## Person detection (Stage 1.3)
 
