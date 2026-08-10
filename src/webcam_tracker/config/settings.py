@@ -15,7 +15,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -206,6 +206,112 @@ class RecoveryConfig(BaseModel):
     )
 
 
+class HazardConfig(BaseModel):
+    """Looming-based hazard detection. Consumed by the hazard module.
+
+    CALIBRATION WARNING: every default in configs/default.yaml is inherited
+    from the Watchdog wearable, where it was tuned against 176 real fired
+    alerts on chest-height footage of someone WALKING. Two of them encode
+    that body and that speed directly -- static_bottom_y assumes a
+    forward-facing camera at chest height, ttc_alert assumes walking
+    closure rates -- and neither transfers to a camera on a drone. Re-derive
+    them from drone footage before trusting an alert; the code ports, the
+    numbers do not.
+    """
+
+    min_samples: int = Field(
+        ge=2,
+        description="Frames of history before a TTC estimate is attempted at all. "
+        "This is the alert latency floor: at 9 FPS on the Pi's CPU, 5 samples is "
+        "~0.54s before a closing person can register, vs ~0.21s at Watchdog's 24 "
+        "FPS. Lower reacts sooner on a noisier fit.",
+    )
+    sample_window: int = Field(
+        ge=2,
+        description="Box-width samples kept per track and fed to the growth-rate "
+        "fit. Longer smooths noise but spans more real time, over which the "
+        "straight-line fit to a curved (~1/distance) growth carries more error.",
+    )
+    min_width_fraction: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Boxes narrower than this fraction of frame width get no TTC -- "
+        "too few pixels for the growth rate to be measurable rather than noise.",
+    )
+    ttc_min: float = Field(
+        gt=0.0, description="Floor on the reported TTC, clamping implausibly fast closures."
+    )
+    ttc_max: float = Field(
+        gt=0.0, description="Ceiling on the reported TTC, clamping barely-growing boxes."
+    )
+    zone_discard_margin: float = Field(
+        ge=0.0,
+        lt=0.5,
+        description="People whose box center is within this fraction of either frame "
+        "edge are discarded entirely: lens distortion there makes both position and "
+        "width (hence TTC) untrustworthy, and they're usually half out of frame.",
+    )
+    zone_left_max: float = Field(
+        gt=0.0, lt=1.0, description="Box centers below this normalized x report zone 'left'."
+    )
+    zone_right_min: float = Field(
+        gt=0.0, lt=1.0, description="Box centers above this normalized x report zone 'right'."
+    )
+    ttc_alert: float = Field(
+        gt=0.0,
+        description="A closing person only becomes a hazard at or below this TTC. "
+        "This is the gate on whether anything is reported at all.",
+    )
+    ttc_urgent: float = Field(
+        gt=0.0,
+        description="Hazards below this TTC are flagged urgent. Only labels a hazard "
+        "that is already firing -- it never suppresses one -- so it's safe to retune "
+        "without risking silence.",
+    )
+    track_cooldown: float = Field(
+        gt=0.0, description="Minimum gap before the SAME track can be reported again."
+    )
+    static_cooldown: float = Field(
+        gt=0.0,
+        description="Longer cooldown for close-but-not-closing hazards. A stationary "
+        "obstacle stays in frame indefinitely, so it would otherwise re-fire forever.",
+    )
+    global_gap: float = Field(
+        gt=0.0,
+        description="Minimum gap between ANY two hazard reports, across all tracks -- "
+        "stops a crowd from producing a continuous stream of them.",
+    )
+    static_bottom_y: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="A person with no measurable looming still counts as a hazard once "
+        "their box bottom reaches this normalized y (close enough to fill the bottom of "
+        "frame). Encodes camera height and pitch -- see the class-level warning.",
+    )
+
+    @model_validator(mode="after")
+    def _check_ordering(self) -> HazardConfig:
+        """Catch orderings that disable a feature silently rather than erroring."""
+        if self.sample_window < self.min_samples:
+            raise ValueError(
+                f"sample_window ({self.sample_window}) < min_samples ({self.min_samples}): "
+                "the history is capped below the minimum, so TTC could never be computed."
+            )
+        if self.ttc_min >= self.ttc_max:
+            raise ValueError(f"ttc_min ({self.ttc_min}) must be < ttc_max ({self.ttc_max})")
+        if self.zone_left_max > self.zone_right_min:
+            raise ValueError(
+                f"zone_left_max ({self.zone_left_max}) must be <= zone_right_min "
+                f"({self.zone_right_min}), else 'center' is empty and no box can report it."
+            )
+        if self.ttc_urgent > self.ttc_alert:
+            raise ValueError(
+                f"ttc_urgent ({self.ttc_urgent}) must be <= ttc_alert ({self.ttc_alert}), "
+                "else every reported hazard is urgent and the distinction is dead."
+            )
+        return self
+
+
 class StateMachineConfig(BaseModel):
     """Tracking state machine settings (Stage 1.9). Consumed by the
     state_machine module, which coordinates selection + prediction + recovery
@@ -369,6 +475,7 @@ class AppConfig(BaseSettings):
     gimbal: GimbalConfig
     motion_prediction: MotionPredictionConfig
     recovery: RecoveryConfig
+    hazard: HazardConfig
     state_machine: StateMachineConfig
     identity: IdentityConfig
     face: FaceConfig

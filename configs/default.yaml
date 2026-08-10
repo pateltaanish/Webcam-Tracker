@@ -171,6 +171,64 @@ recovery:
   search_amplitude: 0.6
   search_period_seconds: 2.0
 
+hazard:
+  # Looming-based hazard detection: how soon is a tracked person going to
+  # collide with the camera, judged purely from how fast their box grows.
+  # No depth sensor and no calibration needed, which is why this runs on the
+  # Pi's CPU detector -- the Watchdog wearable ran the identical math behind
+  # a Hailo NPU, and the drone build has no Hailo hat.
+  #
+  # EVERY NUMBER BELOW IS INHERITED, NOT DERIVED. They were tuned on 176 real
+  # fired alerts from chest-height footage of someone WALKING. static_bottom_y
+  # encodes that camera height and pitch; ttc_alert encodes walking closure
+  # rates. Neither is right for a camera on a drone. Re-measure from drone
+  # footage before trusting an alert -- treat these as a starting point that
+  # is known to be wrong, not a default that happens to be untested.
+
+  # Frames of box history before any TTC is attempted. This is the alert
+  # latency floor: ~0.54s at the Pi's measured 9 FPS, vs ~0.21s at the 24 FPS
+  # Watchdog got from the NPU. The estimate itself is frame-rate independent
+  # (it fits against wall-clock timestamps, not frame counts) -- only the
+  # time-to-first-estimate moves.
+  min_samples: 5
+  # Samples kept per track for the growth-rate fit. Longer smooths noise but
+  # spans more real time, and box width grows as ~1/distance, so a
+  # straight-line fit over a longer arc carries more model error.
+  sample_window: 8
+  # Boxes narrower than this fraction of frame width get no TTC: too few
+  # pixels for growth to be signal rather than detector jitter.
+  min_width_fraction: 0.03
+  # Clamps on the reported TTC, both directions.
+  ttc_min: 0.2
+  ttc_max: 30.0
+
+  # Bearing zones, by normalized box center x.
+  # Within this fraction of either edge, discard the person entirely: lens
+  # distortion makes position and width (hence TTC) untrustworthy there.
+  zone_discard_margin: 0.05
+  zone_left_max: 0.33
+  zone_right_min: 0.67
+
+  # A closing person is only a hazard at or below this TTC. This gate decides
+  # whether anything is reported at all -- the walking-speed assumption lives
+  # here, so it is the first number to re-derive for the drone.
+  ttc_alert: 3.0
+  # Below this TTC a hazard is flagged urgent. Only labels an alert that is
+  # already firing (never suppresses one), so it is safe to retune freely.
+  ttc_urgent: 1.0
+  # Minimum gap before the same track can be reported again.
+  track_cooldown: 4.0
+  # Longer cooldown for close-but-not-closing hazards: a stationary obstacle
+  # stays in frame indefinitely and would otherwise re-fire forever.
+  static_cooldown: 8.0
+  # Minimum gap between any two reports across all tracks, so a crowd can't
+  # produce a continuous stream of them.
+  global_gap: 1.2
+  # A person with no measurable looming still counts as a hazard once their
+  # box bottom reaches this normalized y -- close enough to fill the bottom of
+  # frame. Encodes camera height/pitch; see the warning above.
+  static_bottom_y: 0.75
+
 state_machine:
   # Grace period before a missing target escalates from "brief dropout, hold
   # and wait" (TEMPORARILY_OCCLUDED) to "actively search" (RECOVERY_SEARCH).
