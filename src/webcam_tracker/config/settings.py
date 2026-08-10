@@ -30,6 +30,34 @@ PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
 _DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "default.yaml"
 
 
+class StreamingConfig(BaseModel):
+    """Live MJPEG video + SSE hazard events over HTTP. Consumed by the
+    streaming module and scripts/preview_tracking.py.
+
+    Off by default: the whole point is running headless (no DISPLAY/
+    XAUTHORITY, no cv2.imshow), so a script started with streaming enabled
+    skips the local preview window and can only be stopped with Ctrl+C.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Start the HTTP server and skip the local cv2.imshow window.",
+    )
+    host: str = Field(
+        description="Bind address. 0.0.0.0 listens on every interface, so a "
+        "phone/laptop on the same network can reach it; 127.0.0.1 restricts "
+        "it to the Pi itself (e.g. behind a Tailscale/SSH tunnel)."
+    )
+    port: int = Field(gt=0, le=65535)
+    jpeg_quality: int = Field(
+        ge=1,
+        le=100,
+        description="cv2.IMWRITE_JPEG_QUALITY for each published frame. Encoding "
+        "measured at ~2ms/frame on the Pi regardless of quality in this range -- "
+        "this trades bandwidth, not CPU.",
+    )
+
+
 class VideoConfig(BaseModel):
     """Camera / video-file input settings. Consumed by the video_input module."""
 
@@ -467,6 +495,7 @@ class AppConfig(BaseSettings):
     )
 
     video: VideoConfig
+    streaming: StreamingConfig
     logging: LoggingConfig
     paths: PathsConfig
     detection: DetectionConfig

@@ -7,7 +7,9 @@ rather than raising, so only a test catches it.
 
 from __future__ import annotations
 
+import json
 import math
+from dataclasses import asdict
 
 import pytest
 
@@ -362,3 +364,25 @@ def test_urgent_above_alert_is_rejected() -> None:
 def test_inverted_zone_bounds_are_rejected() -> None:
     with pytest.raises(ValueError, match="zone_left_max"):
         _config(zone_left_max=0.8, zone_right_min=0.2)
+
+
+# --- the JSON contract consumed by the streaming dashboard -----------------
+
+
+def test_hazard_serializes_to_exactly_the_fields_the_dashboard_reads() -> None:
+    """scripts/preview_tracking.py does json.dumps(asdict(hazard)) onto an SSE
+    channel; the built-in dashboard's JS reads track_id/zone/ttc/urgent off
+    the parsed object. Nothing exercises that chain in a live run unless a
+    hazard actually fires, so a field rename here would break the dashboard
+    silently -- this is the test that would catch it.
+
+    is_static is a property, not a field, so asdict() omits it on purpose:
+    the dashboard derives "static" from ttc being null rather than needing a
+    fifth key.
+    """
+    hazard = Hazard(track_id=7, zone="left", ttc=2.5, urgent=False)
+    round_tripped = json.loads(json.dumps(asdict(hazard)))
+    assert round_tripped == {"track_id": 7, "zone": "left", "ttc": 2.5, "urgent": False}
+
+    static = Hazard(track_id=8, zone="right", ttc=None, urgent=False)
+    assert json.loads(json.dumps(asdict(static)))["ttc"] is None

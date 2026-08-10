@@ -38,6 +38,22 @@ video:
   # worth the cost when you're actually reviewing a run.
   record: false
 
+streaming:
+  # Live MJPEG video + SSE hazard events over plain HTTP -- the headless
+  # alternative to cv2.imshow for hardware with no attached display (e.g. a
+  # drone). Off by default: when enabled, preview scripts skip the local
+  # window entirely and can only be stopped with Ctrl+C, so it's opt-in
+  # rather than a silent behavior change.
+  enabled: false
+  # 0.0.0.0 = every interface, so a phone/laptop on the same network can
+  # open http://<device-ip>:<port>/. Use 127.0.0.1 to restrict access to the
+  # device itself, e.g. behind a Tailscale/SSH tunnel.
+  host: "0.0.0.0"
+  port: 8080
+  # cv2.IMWRITE_JPEG_QUALITY. Measured ~2ms/frame on the Pi regardless of
+  # quality in this range -- this trades bandwidth, not CPU.
+  jpeg_quality: 75
+
 logging:
   level: "INFO"   # DEBUG | INFO | WARNING | ERROR
   log_dir: "logs"
