@@ -6,7 +6,12 @@ from webcam_tracker.config.settings import PROJECT_ROOT, AppConfig, load_config
 
 
 def test_load_config_reads_yaml_defaults() -> None:
-    config = load_config()
+    # _env_file=None rather than load_config(): this asserts what the committed
+    # YAML says, so it must not read the developer's own .env. It passed before
+    # only because .env was never loaded at all -- on any machine with a real
+    # .env (the Pi sets video.source=picamera) it would otherwise fail, and
+    # fail differently per machine.
+    config = AppConfig(_env_file=None)  # type: ignore[call-arg]
     assert config.video.source == "auto"
     assert config.video.requested_width == 640
     assert config.video.requested_height == 480
