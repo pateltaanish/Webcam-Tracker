@@ -79,19 +79,38 @@ class FaceMatcher:
     def num_templates(self) -> int:
         return len(self._person_ids)
 
-    def match(self, embedding: np.ndarray) -> MatchResult:
-        """Best registered person for this embedding, or UNKNOWN."""
+    @property
+    def enrolled_names(self) -> set[str]:
+        return set(self._display_names)
+
+    def _best(self, embedding: np.ndarray) -> tuple[str | None, str | None, float]:
         if self._matrix.shape[0] == 0:
-            return MatchResult(is_match=False, person_id=None, display_name=None, score=0.0)
+            return None, None, 0.0
         query = np.asarray(embedding, dtype=np.float32)
         similarities = self._matrix @ query  # cosine (both L2-normalized)
         best = int(np.argmax(similarities))
-        score = float(similarities[best])
-        if score >= self._threshold:
+        return self._person_ids[best], self._display_names[best], float(similarities[best])
+
+    def match(self, embedding: np.ndarray) -> MatchResult:
+        """Best registered person for this embedding, or UNKNOWN."""
+        person_id, display_name, score = self._best(embedding)
+        if person_id is not None and score >= self._threshold:
             return MatchResult(
-                is_match=True,
-                person_id=self._person_ids[best],
-                display_name=self._display_names[best],
-                score=score,
+                is_match=True, person_id=person_id, display_name=display_name, score=score
             )
         return MatchResult(is_match=False, person_id=None, display_name=None, score=score)
+
+    def best_candidate(self, embedding: np.ndarray) -> MatchResult:
+        """Best-scoring template regardless of `match_threshold` -- for offline
+        threshold tuning (`scripts/accuracy_test.py`), which needs to re-decide
+        accept/reject at many threshold values without reloading the store.
+        `is_match` here just means "at least one template exists", not that it
+        clears any threshold -- callers apply their own cutoff to `score`.
+        """
+        person_id, display_name, score = self._best(embedding)
+        return MatchResult(
+            is_match=person_id is not None,
+            person_id=person_id,
+            display_name=display_name,
+            score=score,
+        )

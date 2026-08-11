@@ -30,6 +30,14 @@ its DEK cannot decrypt anyone else's rows, so there is nothing to choose.
 Then you get the tracking menu (preview tracking, change passphrase, log out,
 quit). Tracking/targeting/gimbal/recovery are unchanged from before.
 
+Set WEBCAM_TRACKER_STREAMING__ENABLED=true (or streaming.enabled: true in
+configs/default.yaml) to serve "Preview tracking" over HTTP instead of a
+local cv2 window -- the headless path for a device with no display (e.g. a
+Pi). Open http://<device-ip>:<port>/ (port from streaming.port, default
+8080) on another device on the network. No window means no keyboard, so
+'q'/'e'/'r' aren't available in this mode; Ctrl+C stops the session and
+returns to the tracking menu.
+
 Run from the repo root:
     .venv\\Scripts\\python.exe scripts\\app.py
 
@@ -72,6 +80,7 @@ from webcam_tracker.logging_utils import configure_logging, get_logger
 from webcam_tracker.perf_monitor import PerfMonitor
 from webcam_tracker.registration import SampleEvaluation, create_registrar
 from webcam_tracker.state_machine import create_state_machine
+from webcam_tracker.streaming import LatestBroadcast, start_server
 from webcam_tracker.tracking import TrackedPerson, create_tracker
 from webcam_tracker.video_input import VideoSourceError, create_source
 from webcam_tracker.visualization import (
@@ -589,7 +598,24 @@ def _tracking_flow(
     except VideoSourceError as exc:
         print(f"Could not open camera: {exc}")
         return
-    cv2.namedWindow(_TRACKING_WINDOW)
+
+    # Headless devices (e.g. a Pi with no attached display) stream the
+    # annotated feed over HTTP instead of opening a cv2 window -- same
+    # opt-in switch scripts/preview_tracking.py uses. No window means no
+    # keyboard, so 'q'/'e'/'r' aren't available; Ctrl+C stops the session.
+    frame_broadcast = None
+    http_server = None
+    if config.streaming.enabled:
+        frame_broadcast = LatestBroadcast()
+        http_server = start_server(
+            config.streaming.host, config.streaming.port, frame_broadcast, LatestBroadcast()
+        )
+        print(
+            f"Streaming enabled -- open http://{config.streaming.host}:"
+            f"{config.streaming.port}/ to watch. Ctrl+C to stop."
+        )
+    else:
+        cv2.namedWindow(_TRACKING_WINDOW)
     try:
         with source:
             for frame in source:
@@ -623,8 +649,16 @@ def _tracking_flow(
                 draw_perf_overlay(
                     image, perf.snapshot(), extra_text=f"target: {target.display_name}"
                 )
-                cv2.imshow(_TRACKING_WINDOW, image)
 
+                if frame_broadcast is not None:
+                    ok, buf = cv2.imencode(
+                        ".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, config.streaming.jpeg_quality]
+                    )
+                    if ok:
+                        frame_broadcast.publish(buf.tobytes())
+                    continue  # headless: no window, no key to wait on
+
+                cv2.imshow(_TRACKING_WINDOW, image)
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), 27):
                     break
@@ -634,9 +668,15 @@ def _tracking_flow(
                     state_machine.resume()
     except VideoSourceError as exc:
         print(f"Camera error: {exc}")
+    except KeyboardInterrupt:
+        pass
     finally:
-        cv2.destroyWindow(_TRACKING_WINDOW)
-        cv2.waitKey(1)
+        if http_server is not None:
+            http_server.shutdown()
+            http_server.server_close()
+        else:
+            cv2.destroyWindow(_TRACKING_WINDOW)
+            cv2.waitKey(1)
 
 
 def _choose_person(people: list[Person]) -> Person | None:

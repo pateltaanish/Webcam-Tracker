@@ -22,4 +22,7 @@ def create_identity_tracker(
         update_every_n_frames=tracking.update_every_n_frames,
         history_window=tracking.history_window,
         min_confidence=tracking.min_confidence,
+        reacquire_grace_frames=tracking.reacquire_grace_frames,
+        appearance_match_threshold=tracking.appearance_match_threshold,
+        appearance_memory_frames=tracking.appearance_memory_frames,
     )

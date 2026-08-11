@@ -328,6 +328,20 @@ identity_tracking:
   # returning track is only re-locked once its face confirms the person, not
   # because it merely appeared where the target was predicted to be.
   min_confidence: 0.6
+  # A brand-new track (someone just walked back into frame) keeps forcing a
+  # refresh every frame -- not the periodic cadence above -- for up to this
+  # many frames while unconfirmed. Covers the first frame's face detection
+  # missing (motion blur, walking in at an angle) without waiting out the
+  # full cadence, which is what showed as a stale/raw-track-id label lasting
+  # several seconds on the Pi. Bounded so a stranger who never confirms
+  # doesn't pin the face model to every frame indefinitely.
+  reacquire_grace_frames: 10
+  # Body-appearance (clothing color) fallback for reacquiring a target who
+  # returns facing away, before their face is visible again -- see
+  # src/webcam_tracker/reid. Session-only memory: it can only ever vote for
+  # someone this session has already face-confirmed, never a stranger.
+  appearance_match_threshold: 0.75
+  appearance_memory_frames: 90
 
 # Sections for drone_control, etc. are added as each module is implemented,
 # not stubbed out empty here ahead of time — an unused config field is a

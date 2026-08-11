@@ -1,9 +1,9 @@
 # Webcam-Tracker
 
 Consent-based person-identification and tracking system, being built toward
-a <=250 g drone. **Current stage: Stage 2 -- registration & identity** (Stage 1
-desktop tracking prototype is complete). Full staged roadmap with what's done
-and what's next is at the bottom of this README.
+a <=250 g drone. **Current stage: Stage 3 -- embedded migration** (Stages 1 and
+2, desktop tracking + registration/identity, are complete). Full staged
+roadmap with what's done and what's next is at the bottom of this README.
 
 This project only identifies people who have knowingly registered and
 consented. It is not designed for surveillance or identifying strangers. See
@@ -37,7 +37,7 @@ consented. It is not designed for surveillance or identifying strangers. See
 - [Integration pass (Stage 1.10)](#integration-pass-stage-110)
 - [Project roadmap & status](#project-roadmap--status)
   - [Stage 1 -- Desktop tracking prototype (identity-free) -- COMPLETE](#stage-1----desktop-tracking-prototype-identity-free----complete)
-  - [Stage 2 -- Registration & identity -- IN PROGRESS](#stage-2----registration--identity----in-progress)
+  - [Stage 2 -- Registration & identity -- COMPLETE](#stage-2----registration--identity----complete)
   - [Stage 3 -- Embedded migration -- PLANNED](#stage-3----embedded-migration----planned)
 
 ## Documentation
@@ -157,8 +157,12 @@ From the repo root:
 
 Run it in a **real terminal** (VS Code integrated terminal, PowerShell, a
 Terminal window) -- not a headless/background runner. It asks for passphrases
-(hidden input) and opens live camera windows, both of which need an interactive
-terminal and a display.
+(hidden input), which needs an interactive terminal regardless. Enrollment's
+camera window (step 6 below) needs an attached display too. Preview tracking's
+window can be swapped for the HTTP stream instead (see [Live footage viewing
+over HTTP](#live-footage-viewing-over-http-headless----no-display-needed)) --
+that's the path for a headless device like a Pi: log in over SSH, everything
+else about the menu is unchanged.
 
 ### 3. First launch -- create the first account
 
@@ -385,28 +389,34 @@ decision in `docs/03_onboard_computer.md` §2 first.
 
 ### Live footage viewing over HTTP (headless -- no display needed)
 
-`scripts/preview_tracking.py` can serve the live annotated feed over HTTP
-instead of opening a `cv2.imshow` window -- the practical way to watch it on
-hardware with no attached display, e.g. a drone in the field. It streams from
-inside the same process that owns the camera, publishing each frame into an
-in-memory slot as soon as it's drawn, so there's no file-write-then-poll hop
-in the way. Works on any machine, not just the Pi.
+`scripts/preview_tracking.py` (identity-free) and `scripts/app.py`'s "Preview
+tracking" menu item (logged-in identity tracking) can both serve the live
+annotated feed over HTTP instead of opening a `cv2.imshow` window -- the
+practical way to watch it on hardware with no attached display, e.g. a drone
+in the field or a headless Pi. It streams from inside the same process that
+owns the camera, publishing each frame into an in-memory slot as soon as it's
+drawn, so there's no file-write-then-poll hop in the way. Works on any
+machine, not just the Pi.
 
 Enable it via `.env` or an env var:
 ```
 WEBCAM_TRACKER_STREAMING__ENABLED=true
 ```
-Then run the preview script as usual -- it skips the local window entirely,
-so the only way to stop it is Ctrl+C (there's no window to press 'q' in):
+Then run either script as usual -- it skips the local window entirely, so
+the only way to stop it is Ctrl+C (there's no window to press 'q'/'e'/'r'
+in; in `app.py` Ctrl+C returns to the tracking menu rather than exiting):
 ```
 .venv/bin/python scripts/preview_tracking.py
+.venv/bin/python scripts/app.py   # log in, then [1] Preview tracking
 ```
 Open `http://<device-ip>:8080/` (port from `streaming.port` in
 `configs/default.yaml`) in a browser on any other device on the same
 network. That page shows the live feed plus a running log of hazard alerts
 (time-to-collision from box-growth looming -- see `src/webcam_tracker/hazard`)
-as they fire. `GET /stream` is the raw MJPEG feed, openable directly in
-VLC/mpv; `GET /events` is the same alerts as a Server-Sent stream.
+as they fire -- `preview_tracking.py` only; `app.py`'s stream doesn't publish
+hazard events, just the annotated video. `GET /stream` is the raw MJPEG feed,
+openable directly in VLC/mpv; `GET /events` is the same alerts as a
+Server-Sent stream (idle/keep-alive-only when driven by `app.py`).
 
 **No authentication** -- anyone who can reach `streaming.host:streaming.port`
 can watch. The default `0.0.0.0` binds every interface; set it to
@@ -583,9 +593,10 @@ and verified before the next begins. Full per-checkpoint detail is in
 [`docs/04_roadmap.md`](docs/04_roadmap.md); this is the at-a-glance status.
 `[x]` = done, `[ ]` = not started.
 
-**Currently on:** Stage 2 (registration & identity). Registration, login, and
-live identity tracking all work end to end via `scripts\app.py`. What's left in
-Stage 2: body Re-ID and the accuracy test harness (see below).
+**Currently on:** Stage 2 (registration & identity) -- COMPLETE. Registration,
+login, live identity tracking, body Re-ID reacquisition, and the FAR/FRR
+accuracy harness all work end to end via `scripts\app.py` /
+`scripts\accuracy_test.py`. Next up: Stage 3 (embedded migration).
 
 ### Stage 1 -- Desktop tracking prototype (identity-free) -- COMPLETE
 
@@ -605,7 +616,7 @@ run `scripts\list_cameras.py` there first.)
 - [x] 1.9 `state_machine` -- one authoritative state + output set per frame
 - [x] 1.10 Integration pass -- whole-pipeline tests + a real-clip report tool
 
-### Stage 2 -- Registration & identity -- IN PROGRESS
+### Stage 2 -- Registration & identity -- COMPLETE
 
 Recognize and follow a *specific consenting person*. Local encrypted store; face
 *embeddings* only, never raw images. Needs the identity deps:
@@ -619,8 +630,13 @@ model auto-downloads ~280 MB on first use).
 - [x] 2.5 Multi-user login + unified `app.py` -- log-in/enroll gate; shared-key vs per-user modes
 - [x] Per-name personal passphrase (shared mode) -- overrides the shared key for that one login
 - [x] Stable on-screen ID/color for a recognized person across a track-id change (reentry)
-- [ ] Body Re-ID (OSNet) -- recognize the target when their face is turned away
-- [ ] 2.6 Accuracy test harness -- FAR/FRR on your own captured data (tune the match threshold)
+- [x] Body Re-ID -- lightweight HSV-histogram appearance fallback (`src/webcam_tracker/reid`),
+      not the OSNet embedder originally planned in `docs/02_architecture.md` sec 3.4 -- avoids a
+      new heavy dependency for a short reacquisition-gap bridge; swapping in OSNet later only
+      means replacing `reid.embed()`'s body, not its callers, if HSV proves insufficient
+- [x] 2.6 Accuracy test harness -- `scripts/accuracy_test.py` measures FAR/FRR against your own
+      captured photos (known-target, unregistered-stranger, and wrong-registered-user scenarios)
+      and sweeps `match_threshold` values so you can pick where FAR and FRR cross
 
 ### Stage 3 -- Embedded migration -- PLANNED
 

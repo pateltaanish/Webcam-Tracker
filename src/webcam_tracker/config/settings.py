@@ -477,6 +477,28 @@ class IdentityTrackingConfig(BaseModel):
         "track is confirmed as that person (else the track is unconfirmed/unknown). This "
         "is what makes reacquisition identity-GATED, not geometric.",
     )
+    reacquire_grace_frames: int = Field(
+        ge=0,
+        description="A new, still-unconfirmed track forces a refresh every frame (not just "
+        "once) for up to this many frames -- covers a returning person whose face is missed "
+        "on the very first frame back (motion blur, an off-angle turn). 0 disables the "
+        "grace window and restores the old one-shot-then-cadence behavior.",
+    )
+    appearance_match_threshold: float = Field(
+        gt=0.0,
+        le=1.0,
+        description="Minimum HSV color-histogram correlation (see webcam_tracker.reid) to "
+        "treat a faceless track as a body-appearance match for a recently face-confirmed "
+        "person. This is a soft, session-only fallback for reacquiring someone who returns "
+        "facing away -- it only ever votes for a person already face-matched this session, "
+        "never a stranger.",
+    )
+    appearance_memory_frames: int = Field(
+        ge=0,
+        description="How many frames a person's remembered body-appearance signature stays "
+        "usable as an appearance-fallback candidate after they're last face-confirmed. 0 "
+        "disables the appearance fallback entirely.",
+    )
 
 
 class AppConfig(BaseSettings):

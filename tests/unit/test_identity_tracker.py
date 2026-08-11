@@ -34,8 +34,10 @@ def _track(track_id: int, cx: float, cy: float) -> TrackedPerson:
 class _FakeEmbedder:
     def __init__(self) -> None:
         self.faces: list[DetectedFace] = []
+        self.detect_calls = 0
 
     def detect(self, image: np.ndarray) -> list[DetectedFace]:
+        self.detect_calls += 1
         return list(self.faces)
 
 
@@ -55,8 +57,32 @@ def _make(
     cadence: int = 1,
     window: int = 3,
     min_confidence: float = 0.6,
+    grace: int = 10,
+    appearance_threshold: float = 0.75,
+    appearance_memory: int = 90,
 ) -> IdentityTracker:
-    return IdentityTracker(embedder, matcher, cadence, window, min_confidence)  # type: ignore[arg-type]
+    return IdentityTracker(  # type: ignore[arg-type]
+        embedder,
+        matcher,
+        cadence,
+        window,
+        min_confidence,
+        grace,
+        appearance_threshold,
+        appearance_memory,
+    )
+
+
+def _colored_image(
+    size: int, box: tuple[int, int, int, int], color: tuple[int, int, int]
+) -> np.ndarray:
+    """A solid-black image with one BGR-colored rectangle -- real pixel
+    content for the appearance (color-histogram) fallback tests, which read
+    actual crops rather than the fake embedder's preset face list."""
+    image = np.zeros((size, size, 3), dtype=np.uint8)
+    x1, y1, x2, y2 = box
+    image[y1:y2, x1:x2] = color
+    return image
 
 
 class TestIdentityTracker:
@@ -188,6 +214,103 @@ class TestIdentityTracker:
         tracker.update(_IMAGE, [_track(9, 50, 50)])  # reappears as a NEW track id
 
         assert tracker.stable_ids([9]) == {9: "alice"}  # same stable key as before
+
+    def test_reacquires_within_grace_window_after_missed_first_frame(self) -> None:
+        # The new track's very first frame misses the face entirely (motion
+        # blur / an off-angle turn as someone walks back in) -- confirmation
+        # must not then wait for the periodic cadence (here, effectively
+        # never, at cadence=100); it should keep retrying every frame while
+        # inside the grace window and confirm once the face becomes visible.
+        embedder = _FakeEmbedder()
+        matcher = _FakeMatcher()
+        tracker = _make(embedder, matcher, cadence=100, window=1, grace=5)
+
+        embedder.faces = []  # frame 1: new track, but no face found yet
+        tracker.update(_IMAGE, [_track(9, 50, 50)])
+        assert tracker.resolve_person("alice") is None
+
+        embedder.faces = [_face(50, 50, 1.0)]  # frame 2: face now visible
+        tracker.update(_IMAGE, [_track(9, 50, 50)])
+
+        assert tracker.resolve_person("alice") == 9
+
+    def test_grace_window_lapses_and_falls_back_to_cadence(self) -> None:
+        # An unconfirmable track (no matching template, or face never visible)
+        # must not force a refresh forever -- once its grace window lapses, it
+        # falls back to the periodic cadence like any other unconfirmed track,
+        # so a stranger standing in frame doesn't pin the face model to every
+        # single frame indefinitely.
+        embedder = _FakeEmbedder()
+        matcher = _FakeMatcher()
+        tracker = _make(embedder, matcher, cadence=100, window=1, grace=2)
+        embedder.faces = []  # never matches -- stranger with no face visible
+        track = [_track(9, 50, 50)]
+
+        tracker.update(_IMAGE, track)  # new track -- grace frame 1 of 2
+        tracker.update(_IMAGE, track)  # grace frame 2 of 2
+        assert embedder.detect_calls == 2  # both grace frames forced a refresh
+
+        tracker.update(_IMAGE, track)  # grace lapsed, cadence=100 not due yet
+        assert embedder.detect_calls == 2  # no forced refresh, and no periodic one either
+
+    def test_reacquires_by_appearance_when_no_face_visible(self) -> None:
+        # alice is confirmed by face (remembering her clothing color), leaves
+        # frame, and returns as a new track id facing away -- no face this
+        # frame -- but wearing the same-colored clothes. She should reacquire
+        # by appearance alone.
+        embedder = _FakeEmbedder()
+        matcher = _FakeMatcher()
+        tracker = _make(embedder, matcher, cadence=100, window=1, grace=5)
+        red = (0, 0, 255)
+        image = _colored_image(200, (30, 30, 70, 70), red)
+
+        embedder.faces = [_face(50, 50, 1.0)]
+        tracker.update(image, [_track(1, 50, 50)])
+        assert tracker.resolve_person("alice") == 1
+
+        embedder.faces = []
+        tracker.update(image, [])  # alice leaves frame; track 1 pruned
+        tracker.update(image, [_track(9, 50, 50)])  # same clothes, new track, no face
+
+        assert tracker.resolve_person("alice") == 9
+
+    def test_appearance_fallback_does_not_match_a_different_color(self) -> None:
+        embedder = _FakeEmbedder()
+        matcher = _FakeMatcher()
+        tracker = _make(embedder, matcher, cadence=100, window=1, grace=5)
+        red = (0, 0, 255)
+        blue = (255, 0, 0)
+
+        embedder.faces = [_face(50, 50, 1.0)]
+        tracker.update(_colored_image(200, (30, 30, 70, 70), red), [_track(1, 50, 50)])
+        assert tracker.resolve_person("alice") == 1
+
+        embedder.faces = []
+        tracker.update(_colored_image(200, (30, 30, 70, 70), red), [])  # track 1 gone
+
+        # a differently-dressed stranger appears where alice was -- must not
+        # be handed her identity just because a track appeared nearby.
+        tracker.update(_colored_image(200, (30, 30, 70, 70), blue), [_track(9, 50, 50)])
+        assert tracker.identity_of(9) is None
+
+    def test_appearance_memory_expires_after_configured_frames(self) -> None:
+        embedder = _FakeEmbedder()
+        matcher = _FakeMatcher()
+        tracker = _make(embedder, matcher, cadence=100, window=1, grace=1, appearance_memory=2)
+        red = (0, 0, 255)
+        image = _colored_image(200, (30, 30, 70, 70), red)
+
+        embedder.faces = [_face(50, 50, 1.0)]
+        tracker.update(image, [_track(1, 50, 50)])
+        assert tracker.resolve_person("alice") == 1
+
+        embedder.faces = []
+        tracker.update(image, [])  # track 1 gone; appearance memory starts aging
+        tracker.update(image, [])
+        tracker.update(image, [])  # memory=2 frames elapsed -- entry expires
+
+        tracker.update(image, [_track(9, 50, 50)])  # same clothes, but memory lapsed
+        assert tracker.identity_of(9) is None
 
     def test_stable_ids_empty_when_nothing_confirmed(self) -> None:
         embedder = _FakeEmbedder()

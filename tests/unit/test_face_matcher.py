@@ -107,3 +107,40 @@ class TestFaceMatcher:
 
         assert matcher.num_templates == 0
         assert matcher.match(_unit(1)).is_match is False
+
+    def test_enrolled_names(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        _enroll(store, "Alice", _unit(1))
+        _enroll(store, "Bob", _unit(2))
+        matcher = FaceMatcher(0.35)
+        matcher.load(store)
+
+        assert matcher.enrolled_names == {"Alice", "Bob"}
+
+    def test_best_candidate_ignores_threshold(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        alice = _enroll(store, "Alice", _unit(1))
+        matcher = FaceMatcher(match_threshold=0.999)  # so close_but_not_alice won't clear it
+        matcher.load(store)
+
+        base = _unit(1)
+        close_but_not_alice = base + 0.1 * _unit(7)
+        close_but_not_alice = close_but_not_alice / np.linalg.norm(close_but_not_alice)
+
+        # match() rejects it (below the strict threshold)...
+        assert matcher.match(close_but_not_alice).is_match is False
+        # ...but best_candidate() still reports who it's nearest to, and the
+        # real score, regardless of match_threshold.
+        best = matcher.best_candidate(close_but_not_alice)
+        assert best.person_id == alice.id
+        assert best.display_name == "Alice"
+        assert 0.0 < best.score < 0.999
+
+    def test_best_candidate_empty_store(self, tmp_path: Path) -> None:
+        matcher = FaceMatcher(0.35)
+        matcher.load(_store(tmp_path))
+
+        best = matcher.best_candidate(_unit(1))
+        assert best.is_match is False
+        assert best.person_id is None
+        assert best.score == 0.0

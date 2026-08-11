@@ -259,10 +259,9 @@ decisions (2026-07-22): encryption keyed by an **operator passphrase**
      live demo: labels each webcam face with the matched name+score (green) or
      UNKNOWN (red). 7 new tests incl. an integration test on the real model:
      enroll one person, then recognize them in the full image while a different
-     person correctly returns UNKNOWN. 185 tests total. The **`reid`** (OSNet
-     body-appearance) slice is still to come -- it extends the same
-     match-against-store pattern for when the face isn't visible.
-2.4. **DONE (Re-ID contribution pending its slice).** `identity` fusion:
+     person correctly returns UNKNOWN. 185 tests total. The **`reid`**
+     body-appearance slice landed later as part of 2.4 (see below).
+2.4. **DONE.** `identity` fusion:
      `IdentityTracker` assigns registered-person identities to live tracks by
      (a) periodically running the face embedder (every
      `identity_tracking.update_every_n_frames` -- the model is too slow for
@@ -283,10 +282,33 @@ decisions (2026-07-22): encryption keyed by an **operator passphrase**
      capstone: pick a registered person, and the full pipeline follows only
      them, reacquiring by face. 11 new tests (IdentityTracker fusion logic with
      fakes; state-machine identity mode incl. reacquire-across-id-change and
-     geometric-reacquire-suppressed). 196 tests total. Still to add: the
-     **`reid`** (OSNet body) contribution for when the face isn't visible.
-2.5. Test harness: known-target vs. unregistered-person vs. wrong-registered-user
-     scenarios, measuring FAR/FRR on your own captured data.
+     geometric-reacquire-suppressed). 196 tests total. Later addition: the
+     **`reid`** contribution for when the face isn't visible -- a lightweight
+     HSV color-histogram body-appearance signature (`src/webcam_tracker/reid`),
+     not the OSNet embedder originally scoped in `docs/02_architecture.md` sec
+     3.4 (avoids a new heavy dependency; OSNet can still replace `reid.embed()`
+     later without touching its callers). Wired into `IdentityTracker` as a
+     session-only fallback vote: a faceless track is only ever matched to a
+     person already face-confirmed this session, never a stranger. Also added
+     in the same slice: a `reacquire_grace_frames` window so a returning,
+     still-unconfirmed track forces a face refresh every frame (not the slow
+     periodic cadence) until confirmed or the grace window lapses -- fixes the
+     stale-track-id-label-for-several-seconds symptom seen on the Pi. 5 new
+     tests (grace-window reacquisition, cadence fallback, appearance-match,
+     appearance-mismatch-rejected, appearance-memory-expiry).
+2.5. **DONE.** Accuracy test harness (`scripts/accuracy_test.py`): feeds a
+     folder of your own captured photos, organized one subfolder per enrolled
+     person's `display_name` plus an `unregistered/` folder of stranger photos,
+     through the same embedder+matcher used at runtime. Reports FAR/FRR at the
+     configured `face.match_threshold` and sweeps a range of threshold values
+     so the crossover point is visible instead of guessed. A genuine probe
+     that matches a *different* enrolled person (the wrong-registered-user
+     scenario) counts as a failure the same as UNKNOWN would, not a pass.
+     `FaceMatcher` gained `best_candidate()` (raw best-scoring template,
+     independent of `match_threshold`) and `enrolled_names` to support this
+     without needing a second store/matcher load per threshold. 3 new tests.
+     276 tests total -- Stage 2 complete.
+     203 tests total.
 
 ## Stage 3 — Embedded migration
 
